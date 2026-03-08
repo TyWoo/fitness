@@ -717,39 +717,134 @@
     }
 
     // ── CARDIO ───────────────────────────────────────────────────
-    function CardioScreen({ sessions }) {
-      const rows = useMemo(() => rowingSessions(sessions), [sessions]);
+    function fmtSplit(sec) {
+      if (!sec) return '—';
+      return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2,'0')} /500m`;
+    }
+
+    function CardioScreen({ sessions, cardioSessions }) {
+      const logRows   = useMemo(() => rowingSessions(sessions), [sessions]);
+      const polarData = useMemo(() => (cardioSessions || []).filter(s => s.source === 'polar'),      [cardioSessions]);
+      const runData   = useMemo(() => (cardioSessions || []).filter(s => s.source === 'google_fit'), [cardioSessions]);
+      const rowData   = useMemo(() => (cardioSessions || []).filter(s => s.source === 'concept2'),   [cardioSessions]);
+
+      const lastPolar = polarData[0] || null;
+      const lastRun   = runData[0]   || null;
+      const lastRow   = rowData[0]   || null;
+
+      const polarChartData = useMemo(() => ({
+        labels:   polarData.slice(0,30).reverse().map(s => fmtDate(s.date_local)),
+        datasets: [
+          { label:'HRV (RMSSD)', data: polarData.slice(0,30).reverse().map(s => s.hrv_rmssd), borderColor:'#27ae60', backgroundColor:'rgba(39,174,96,0.1)', tension:0.3, pointRadius:2 },
+          { label:'Avg HR',      data: polarData.slice(0,30).reverse().map(s => s.avg_hr),    borderColor:'#e8501a', backgroundColor:'rgba(232,80,26,0.1)',  tension:0.3, pointRadius:2, yAxisID:'y2' },
+        ],
+      }), [polarData]);
+
+      const runChartData = useMemo(() => ({
+        labels:   runData.slice(0,20).reverse().map(s => fmtDate(s.date_local)),
+        datasets: [{ label:'Distance (km)', data: runData.slice(0,20).reverse().map(s => s.distance_km), borderColor:'#4a90d9', backgroundColor:'rgba(74,144,217,0.1)', tension:0.3, pointRadius:2 }],
+      }), [runData]);
+
+      const rowChartData = useMemo(() => ({
+        labels:   rowData.slice(0,20).reverse().map(s => fmtDate(s.date_local)),
+        datasets: [{ label:'Split (sec)', data: rowData.slice(0,20).reverse().map(s => s.avg_split_seconds), borderColor:'#e8a01a', backgroundColor:'rgba(232,160,26,0.1)', tension:0.3, pointRadius:2 }],
+      }), [rowData]);
+
+      const dualYOpts = { ...BASE_OPTS, scales: { ...BASE_OPTS.scales, y2: { position:'right', grid:{ display:false }, ticks:{ color:'#333', font:CFONT } } } };
+
       return html`
         <div class="screen">
-          <${Section} label="WORKOUT HR · HRV" badge="PENDING">
-            <${PendingCard} title="POLAR H10"
-              desc="Connect Polar H10 via n8n to overlay per-workout HR and HRV (RMSSD ms) on the Surf the Curve chart."
-              metrics=${[{label:'AVG WORKOUT HR'},{label:'MAX HR'},{label:'HRV (RMSSD ms)'},{label:'HR ZONES'}]} />
-          <//>
 
-          <${Section} label="RUNNING" badge="PENDING">
-            <${PendingCard} title="RUNNING APP"
-              desc="Connect running app via n8n. Pace trend, HR zone breakdown, and distance tracking populate here."
-              metrics=${[{label:'AVG PACE'},{label:'DISTANCE (KM)'},{label:'AVG HR'},{label:'ZONE DIST %'}]} />
-          <//>
-
-          <${Section} label="ROWING · CONCEPT2" badge=${rows.length ? 'PARTIAL' : 'PENDING'}>
-            ${rows.length > 0 && html`
-              <div class="card card-p" style=${{ marginBottom:'12px' }}>
-                <div style=${{ display:'flex', justifyContent:'space-between', fontSize:'10px', color:'#555', marginBottom:'12px' }}>
-                  <span>${rows.length} SESSION${rows.length !== 1 ? 'S' : ''} FROM WORKOUT LOG</span>
-                  <span>ERGDATA PENDING</span>
+          <${Section} label="WORKOUT HR · HRV" badge=${polarData.length ? 'LIVE' : 'PENDING'}>
+            ${polarData.length === 0 ? html`
+              <${PendingCard} title="POLAR H10"
+                desc="Connect Polar H10 via n8n to overlay per-workout HR and HRV (RMSSD ms) on the Surf the Curve chart."
+                metrics=${[{label:'AVG WORKOUT HR'},{label:'MAX HR'},{label:'HRV (RMSSD ms)'},{label:'HR ZONES'}]} />
+            ` : html`
+              <div class="stat-grid" style=${{ gridTemplateColumns:'repeat(3,1fr)', marginBottom:'12px' }}>
+                <div class="stat-card"><div class="stat-val">${lastPolar.avg_hr || '—'}</div><div class="stat-label">AVG HR</div></div>
+                <div class="stat-card"><div class="stat-val">${lastPolar.max_hr || '—'}</div><div class="stat-label">MAX HR</div></div>
+                <div class="stat-card"><div class="stat-val accent">${lastPolar.hrv_rmssd ? Math.round(lastPolar.hrv_rmssd) : '—'}</div><div class="stat-label">HRV ms</div></div>
+              </div>
+              <div class="card card-p">
+                <${ChartCanvas} type="line" data=${polarChartData} options=${dualYOpts} height=${140} />
+                <div class="chart-legend" style=${{ marginTop:'8px' }}>
+                  <span style=${{ color:'#27ae60' }}>● HRV (RMSSD)</span>
+                  <span style=${{ color:'#e8501a' }}>● Avg HR</span>
                 </div>
-                ${rows.slice(0, 6).map((r, i) => html`
-                  <div key=${i} style=${{ display:'flex', justifyContent:'space-between', fontSize:'11px', marginBottom:'8px' }}>
-                    <span style=${{ color:'#fff' }}>${fmtDate(r.date)}</span>
-                    <span style=${{ color:'#555' }}>${fmtDur(r.dur)}</span>
-                    <span style=${{ color:'#2a2a2a' }}>split · SPM · HR via ErgData</span>
+              </div>
+            `}
+          <//>
+
+          <${Section} label="RUNNING" badge=${runData.length ? 'LIVE' : 'PENDING'}>
+            ${runData.length === 0 ? html`
+              <${PendingCard} title="RUNNING APP"
+                desc="Connect running app via n8n. Pace trend, HR zone breakdown, and distance tracking populate here."
+                metrics=${[{label:'AVG PACE'},{label:'DISTANCE (KM)'},{label:'AVG HR'},{label:'ZONE DIST %'}]} />
+            ` : html`
+              <div class="stat-grid" style=${{ gridTemplateColumns:'repeat(3,1fr)', marginBottom:'12px' }}>
+                <div class="stat-card"><div class="stat-val bebas" style=${{ fontSize:'28px' }}>${lastRun.avg_pace_km || '—'}</div><div class="stat-label">AVG PACE /km</div></div>
+                <div class="stat-card"><div class="stat-val">${lastRun.distance_km ? lastRun.distance_km.toFixed(1) : '—'}</div><div class="stat-label">KM</div></div>
+                <div class="stat-card"><div class="stat-val">${lastRun.avg_hr || '—'}</div><div class="stat-label">AVG HR</div></div>
+              </div>
+              ${lastRun.hr_zones && html`
+                <div class="card card-p" style=${{ marginBottom:'12px' }}>
+                  <div style=${{ fontSize:'10px', color:'#555', marginBottom:'8px' }}>HR ZONES · LAST RUN</div>
+                  ${['z1','z2','z3','z4','z5'].map((z,i) => {
+                    const pct = ((lastRun.hr_zones[z+'_pct']) || 0).toFixed(0);
+                    const colors = ['#27ae60','#4a90d9','#f39c12','#e8501a','#c0392b'];
+                    return html`
+                      <div class="muscle-row" key=${z}>
+                        <div class="muscle-name">ZONE ${i+1}</div>
+                        <div class="muscle-bar-bg"><div class="muscle-bar-fill" style=${{ width:pct+'%', background:colors[i] }}><span class="muscle-bar-num">${pct}%</span></div></div>
+                      </div>`;
+                  })}
+                </div>`}
+              <div class="card card-p">
+                <${ChartCanvas} type="line" data=${runChartData} options=${BASE_OPTS} height=${120} />
+              </div>
+            `}
+          <//>
+
+          <${Section} label="ROWING · CONCEPT2" badge=${rowData.length ? 'LIVE' : logRows.length ? 'PARTIAL' : 'PENDING'}>
+            ${rowData.length === 0 ? html`
+              ${logRows.length > 0 && html`
+                <div class="card card-p" style=${{ marginBottom:'12px' }}>
+                  <div style=${{ display:'flex', justifyContent:'space-between', fontSize:'10px', color:'#555', marginBottom:'12px' }}>
+                    <span>${logRows.length} SESSION${logRows.length !== 1 ? 'S' : ''} FROM WORKOUT LOG</span>
+                    <span>ERGDATA PENDING</span>
+                  </div>
+                  ${logRows.slice(0,6).map((r,i) => html`
+                    <div key=${i} style=${{ display:'flex', justifyContent:'space-between', fontSize:'11px', marginBottom:'8px' }}>
+                      <span style=${{ color:'#fff' }}>${fmtDate(r.date)}</span>
+                      <span style=${{ color:'#555' }}>${fmtDur(r.dur)}</span>
+                      <span style=${{ color:'#2a2a2a' }}>split · SPM · HR via ErgData</span>
+                    </div>`)}
+                </div>`}
+              <${PendingCard} title="CONCEPT2 ERGDATA"
+                desc="Connect ErgData via n8n for split times, stroke rate, and HR data."
+                metrics=${[{label:'AVG SPLIT /500m'},{label:'STROKE RATE SPM'},{label:'DISTANCE (m)'},{label:'AVG HR'}]} />
+            ` : html`
+              <div class="stat-grid" style=${{ gridTemplateColumns:'repeat(4,1fr)', marginBottom:'12px' }}>
+                <div class="stat-card"><div class="stat-val bebas" style=${{ fontSize:'18px' }}>${fmtSplit(lastRow.avg_split_seconds)}</div><div class="stat-label">SPLIT</div></div>
+                <div class="stat-card"><div class="stat-val">${lastRow.avg_stroke_rate || '—'}</div><div class="stat-label">SPM</div></div>
+                <div class="stat-card"><div class="stat-val">${lastRow.distance_meters ? (lastRow.distance_meters/1000).toFixed(1)+'k' : '—'}</div><div class="stat-label">METERS</div></div>
+                <div class="stat-card"><div class="stat-val">${lastRow.avg_hr || '—'}</div><div class="stat-label">AVG HR</div></div>
+              </div>
+              <div class="card card-p" style=${{ marginBottom:'12px' }}>
+                <div style=${{ fontSize:'10px', color:'#555', marginBottom:'8px' }}>SPLIT TREND (lower = faster)</div>
+                <${ChartCanvas} type="line" data=${rowChartData} options=${BASE_OPTS} height=${120} />
+              </div>
+              <div class="card card-p">
+                ${rowData.slice(0,8).map((r,i) => html`
+                  <div key=${i} style=${{ display:'flex', justifyContent:'space-between', alignItems:'center', fontSize:'11px', padding:'8px 0', borderBottom: i < Math.min(rowData.length,8)-1 ? '1px solid #1a1a1a' : 'none' }}>
+                    <span style=${{ color:'#888' }}>${fmtDate(r.date_local)}</span>
+                    <span style=${{ color:'#fff' }}>${fmtSplit(r.avg_split_seconds)}</span>
+                    <span style=${{ color:'#555' }}>${r.avg_stroke_rate || '—'} SPM</span>
+                    <span style=${{ color:'#555' }}>${r.distance_meters ? r.distance_meters+'m' : '—'}</span>
                   </div>`)}
-              </div>`}
-            <${PendingCard} title="CONCEPT2 ERGDATA"
-              desc="Connect ErgData via n8n for split times, stroke rate, and HR data. Zone 2 sessions above are from your workout log."
-              metrics=${[{label:'AVG SPLIT /500m'},{label:'STROKE RATE SPM'},{label:'DISTANCE (m)'},{label:'AVG HR'}]} />
+              </div>
+            `}
           <//>
         </div>`;
     }
@@ -831,21 +926,24 @@
 
     // ── APP ──────────────────────────────────────────────────────
     function App() {
-      const [sessions,     setSessions]     = useState([]);
-      const [measurements, setMeasurements] = useState([]);
-      const [loading,      setLoading]      = useState(true);
-      const [error,        setError]        = useState(null);
-      const [tab,          setTab]          = useState('overview');
+      const [sessions,      setSessions]      = useState([]);
+      const [measurements,  setMeasurements]  = useState([]);
+      const [cardioSessions,setCardioSessions] = useState([]);
+      const [loading,       setLoading]       = useState(true);
+      const [error,         setError]         = useState(null);
+      const [tab,           setTab]           = useState('overview');
 
       useEffect(() => {
         Promise.all([
           sb.from('workout_sessions').select('*').order('date_local', { ascending: false }).limit(300),
           sb.from('body_measurements').select('*').order('date', { ascending: false }).limit(100),
-        ]).then(([{ data: sess, error: se }, { data: meas, error: me }]) => {
+          sb.from('cardio_sessions').select('*').order('date_local', { ascending: false }).limit(200),
+        ]).then(([{ data: sess, error: se }, { data: meas, error: me }, { data: cardio, error: ce }]) => {
           if (se) { setError(se.message); }
           else {
             setSessions(sess || []);
             setMeasurements(me ? [] : (meas || []));
+            setCardioSessions(ce ? [] : (cardio || []));
           }
         }).catch(e => setError(e.message)).finally(() => setLoading(false));
       }, []);
@@ -871,7 +969,7 @@
           ${tab === 'overview' && html`<${OverviewScreen}  sessions=${sessions} />`}
           ${tab === 'strength' && html`<${StrengthScreen}  sessions=${sessions} />`}
           ${tab === 'body'     && html`<${BodyScreen}       measurements=${measurements} />`}
-          ${tab === 'cardio'   && html`<${CardioScreen}     sessions=${sessions} />`}
+          ${tab === 'cardio'   && html`<${CardioScreen}     sessions=${sessions} cardioSessions=${cardioSessions} />`}
           ${tab === 'history'  && html`<${HistoryScreen}    sessions=${sessions} />`}
 
           <nav class="bottom-nav">
