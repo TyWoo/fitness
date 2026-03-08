@@ -1156,6 +1156,43 @@ function buildSessionData(tmpl, duration) {
   };
 }
 
+async function syncSessionToSupabase(session) {
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/workout_sessions`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': SUPABASE_KEY,
+        'Authorization': `Bearer ${SUPABASE_KEY}`,
+        'Prefer': 'return=minimal',
+      },
+      body: JSON.stringify({
+        date_local:        session.dateLocal,
+        date_iso:          session.date,
+        template_id:       session.templateId,
+        template_name:     session.templateName,
+        duration_seconds:  session.duration,
+        readiness:         session.readiness,
+        exercises:         session.exercises,
+        emom:              session.emom,
+        amrap:             session.amrap,
+        total_sets_logged: session.totalSetsLogged,
+      }),
+    });
+    if (!res.ok) {
+      const body = await res.text();
+      console.error('Supabase sync failed:', res.status, body);
+    } else {
+      showToast('Synced to cloud');
+    }
+  } catch (e) {
+    console.error('Supabase sync error:', e);
+  }
+}
+
+const SUPABASE_URL = 'https://wnwkraukvizulycjssyk.supabase.co';
+const SUPABASE_KEY = 'sb_publishable__XnF9a593J_CgLzof3k-Mw_AA-jKpl6';
+
 function renderSummary(session) {
   const m = Math.floor(session.duration / 60);
   document.getElementById('sum-duration').textContent = `${m} minutes · Readiness: ${session.readiness}`;

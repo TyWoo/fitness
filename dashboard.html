@@ -1,0 +1,1176 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="theme-color" content="#0a0a0a">
+  <title>Iron Atlas · Dashboard</title>
+
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Bebas+Neue&family=IBM+Plex+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: { accent: '#e8501a', surface: '#141414', surface2: '#1c1c1c' },
+          fontFamily: {
+            mono: ['IBM Plex Mono', 'monospace'],
+            bebas: ['Bebas Neue', 'cursive'],
+          },
+        },
+      },
+    };
+  </script>
+
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/@babel/standalone@7/babel.min.js"></script>
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+    html, body { height: 100%; background: #0a0a0a; color: #e8e8e8; -webkit-font-smoothing: antialiased; }
+    body { font-family: 'IBM Plex Mono', monospace; overflow-x: hidden; }
+    ::-webkit-scrollbar { width: 3px; height: 3px; }
+    ::-webkit-scrollbar-track { background: #111; }
+    ::-webkit-scrollbar-thumb { background: #2a2a2a; border-radius: 2px; }
+  </style>
+</head>
+<body>
+  <div id="root"></div>
+
+  <script type="text/babel">
+    const { useState, useEffect, useRef, useMemo } = React;
+
+    // ============================================================
+    // CONFIG
+    // ============================================================
+    const SB_URL  = 'https://wnwkraukvizulycjssyk.supabase.co';
+    const SB_KEY  = 'sb_publishable__XnF9a593J_CgLzof3k-Mw_AA-jKpl6';
+    const ATHLETE_BW    = 220;
+    const TARGET_WEIGHT = 190;
+    const TARGET_BF     = 11;
+
+    const { createClient } = supabase;
+    const sb = createClient(SB_URL, SB_KEY);
+
+    // ============================================================
+    // MAPPINGS
+    // ============================================================
+    const MUSCLE_MAP = {
+      squat: 'Quads', front_squat: 'Quads', bss: 'Quads', mk_squat: 'Quads',
+      mk_bss: 'Quads', walk_lunge: 'Quads', pistol: 'Quads',
+      rdl: 'Hamstrings', mk_rdl: 'Hamstrings', nordic: 'Hamstrings',
+      hip_thrust: 'Glutes',
+      sl_calf: 'Calves', calf_raise: 'Calves',
+      depth_drop: 'Plyos', broad_jump: 'Plyos', sl_hop: 'Plyos',
+      box_jump: 'Plyos', mk_box: 'Plyos',
+      bench: 'Chest', mk_bench: 'Chest', dips: 'Chest', mk_dips: 'Chest',
+      ohp: 'Shoulders', mk_ohp: 'Shoulders', face_pull: 'Shoulders', band_pull: 'Shoulders',
+      row: 'Back', pullup: 'Back', lat_pd: 'Back',
+      curl: 'Biceps',
+      hollow: 'Core', mk_hollow: 'Core', pallof: 'Core', mk_pallof: 'Core', mk_abwheel: 'Core',
+      kb_swing: 'Conditioning', hip_circle: 'Conditioning',
+      row_z2: 'Cardio',
+      foam: 'Recovery', squat_hold: 'Recovery', pigeon: 'Recovery',
+      thor_rot: 'Recovery', couch: 'Recovery', ham_floss: 'Recovery',
+      ankle_df: 'Recovery', bosu_bal: 'Recovery', ankle_mob: 'Recovery',
+    };
+
+    const MUSCLE_COLORS = {
+      Quads: '#e8501a', Chest: '#c43d0e', Back: '#4a90d9',
+      Hamstrings: '#e8a01a', Glutes: '#c45c1a', Shoulders: '#9b59b6',
+      Calves: '#666', Biceps: '#27ae60', Core: '#16a085',
+      Plyos: '#f39c12', Conditioning: '#e74c3c',
+      Cardio: '#3498db', Recovery: '#333',
+    };
+
+    const KEY_LIFTS = [
+      { id: 'squat',  aliases: ['squat',  'mk_squat'],  name: 'Back Squat',       color: '#e8501a' },
+      { id: 'bench',  aliases: ['bench',  'mk_bench'],  name: 'Bench Press',       color: '#4a90d9' },
+      { id: 'rdl',    aliases: ['rdl',    'mk_rdl'],    name: 'Romanian DL',       color: '#e8a01a' },
+      { id: 'ohp',    aliases: ['ohp',    'mk_ohp'],    name: 'Overhead Press',    color: '#9b59b6' },
+      { id: 'row',    aliases: ['row'],                  name: 'Barbell Row',       color: '#27ae60' },
+      { id: 'pullup', aliases: ['pullup'],               name: 'Pull-ups',          color: '#16a085' },
+    ];
+
+    // ============================================================
+    // DATA UTILITIES
+    // ============================================================
+    function getMuscleGroup(id) {
+      if (!id) return 'Other';
+      if (MUSCLE_MAP[id]) return MUSCLE_MAP[id];
+      // partial match: mk_rdl → rdl, etc.
+      const bare = id.replace(/^mk_/, '');
+      for (const [k, v] of Object.entries(MUSCLE_MAP)) {
+        if (k === bare || id.includes(k)) return v;
+      }
+      return 'Other';
+    }
+
+    function estimateE1RM(weight, repsRaw) {
+      const reps = parseInt(repsRaw) || 0;
+      if (!weight || reps <= 0) return 0;
+      if (reps === 1) return weight;
+      return Math.round(weight * (1 + reps / 30));
+    }
+
+    function parseExercises(raw) {
+      if (!raw) return [];
+      const arr = Array.isArray(raw) ? raw : Object.values(raw);
+      return arr.map(ex => ({
+        id:   ex.id   || '',
+        name: ex.name || 'Unknown',
+        sets: (ex.sets || []).filter(s => s.logged !== false),
+      }));
+    }
+
+    function localDate(s) {
+      // Normalise to YYYY-MM-DD regardless of ISO suffix
+      return (s || '').slice(0, 10);
+    }
+
+    function getWeekBounds(offsetWeeks = 0) {
+      const now = new Date();
+      const dow = now.getDay();
+      const mon = new Date(now);
+      mon.setDate(now.getDate() - (dow === 0 ? 6 : dow - 1) - offsetWeeks * 7);
+      mon.setHours(0, 0, 0, 0);
+      const sun = new Date(mon);
+      sun.setDate(mon.getDate() + 6);
+      sun.setHours(23, 59, 59, 999);
+      return { start: mon, end: sun };
+    }
+
+    function sessionDate(s) {
+      return new Date(localDate(s.date_local) + 'T12:00:00');
+    }
+
+    function getWeeklyStats(sessions) {
+      const { start, end } = getWeekBounds();
+      const week = sessions.filter(s => {
+        const d = sessionDate(s);
+        return d >= start && d <= end;
+      });
+
+      let totalSets = 0, totalVolume = 0;
+      const muscleGroupSets = {};
+
+      week.forEach(s => {
+        totalSets += s.total_sets_logged || 0;
+        parseExercises(s.exercises).forEach(ex => {
+          const g = getMuscleGroup(ex.id);
+          muscleGroupSets[g] = (muscleGroupSets[g] || 0) + ex.sets.length;
+          ex.sets.forEach(set => {
+            if (set.weight && set.reps) totalVolume += set.weight * (parseInt(set.reps) || 1);
+          });
+        });
+      });
+
+      const { start: ps, end: pe } = getWeekBounds(1);
+      const prevSets = sessions
+        .filter(s => { const d = sessionDate(s); return d >= ps && d <= pe; })
+        .reduce((a, s) => a + (s.total_sets_logged || 0), 0);
+
+      return {
+        daysTrained: week.filter(s => !s.template_id?.includes('rest')).length,
+        totalSets, totalVolume, muscleGroupSets,
+        loadDelta: totalSets - prevSets,
+      };
+    }
+
+    function getSurfData(sessions, days = 21) {
+      const today = new Date();
+      return Array.from({ length: days }, (_, i) => {
+        const d = new Date(today);
+        d.setDate(today.getDate() - (days - 1 - i));
+        const dateStr = d.toISOString().split('T')[0];
+        const s = sessions.find(s => localDate(s.date_local) === dateStr);
+        return {
+          label: d.toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+          sets: s?.total_sets_logged || 0,
+          readiness: s?.readiness ?? null,
+        };
+      });
+    }
+
+    function getLiftHistory(sessions, aliases, isPullup = false) {
+      return sessions
+        .flatMap(s => {
+          const match = parseExercises(s.exercises).find(e => aliases.includes(e.id));
+          if (!match) return [];
+          let best = { e1rm: 0, weight: 0, reps: '' };
+          match.sets.forEach(set => {
+            const eff = isPullup ? ATHLETE_BW + (set.weight || 0) : (set.weight || 0);
+            const e = estimateE1RM(eff, set.reps);
+            if (e > best.e1rm) best = { e1rm: e, weight: eff, reps: set.reps };
+          });
+          if (!best.e1rm) return [];
+          return [{ date: localDate(s.date_local), ...best }];
+        })
+        .sort((a, b) => new Date(a.date) - new Date(b.date));
+    }
+
+    function getRowingSessions(sessions) {
+      return sessions
+        .filter(s => parseExercises(s.exercises).some(e => e.id === 'row_z2'))
+        .map(s => ({ date: localDate(s.date_local), duration: s.duration_seconds }))
+        .sort((a, b) => new Date(b.date) - new Date(a.date));
+    }
+
+    function fmtDate(d) {
+      if (!d) return '';
+      return new Date(d + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    }
+    function fmtDuration(s) {
+      if (!s) return '—';
+      const m = Math.floor(s / 60), h = Math.floor(m / 60);
+      return h > 0 ? `${h}h ${m % 60}m` : `${m}m`;
+    }
+    function fmtVolume(lbs) {
+      if (lbs >= 1000) return `${(lbs / 1000).toFixed(1)}k`;
+      return `${Math.round(lbs)}`;
+    }
+    function daysSince(d) {
+      if (!d) return '';
+      const diff = Math.floor((Date.now() - new Date(d + 'T12:00:00')) / 86400000);
+      if (diff === 0) return 'today';
+      if (diff === 1) return '1d ago';
+      return `${diff}d ago`;
+    }
+
+    // ============================================================
+    // CHART.JS SETUP
+    // ============================================================
+    Chart.register(...Chart.registerables);
+
+    const CHART_FONT = { family: 'IBM Plex Mono', size: 10 };
+
+    const BASE_OPTS = {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: { duration: 350 },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          backgroundColor: '#1c1c1c',
+          borderColor: '#2a2a2a',
+          borderWidth: 1,
+          titleColor: '#e8e8e8',
+          bodyColor: '#888',
+          titleFont: { family: 'IBM Plex Mono', size: 11 },
+          bodyFont: CHART_FONT,
+          padding: 10,
+        },
+      },
+      scales: {
+        x: {
+          grid: { color: '#1a1a1a' },
+          ticks: { color: '#3a3a3a', font: CHART_FONT, maxTicksLimit: 7 },
+          border: { display: false },
+        },
+        y: {
+          grid: { color: '#1a1a1a' },
+          ticks: { color: '#3a3a3a', font: CHART_FONT },
+          border: { display: false },
+        },
+      },
+    };
+
+    function deepMerge(a, b) {
+      const out = { ...a };
+      for (const k in b) {
+        if (b[k] && typeof b[k] === 'object' && !Array.isArray(b[k]))
+          out[k] = deepMerge(a[k] || {}, b[k]);
+        else out[k] = b[k];
+      }
+      return out;
+    }
+
+    function ChartCanvas({ type = 'line', data, options = {}, height = 160 }) {
+      const canvasRef = useRef(null);
+      const chartRef  = useRef(null);
+      const dataKey   = useMemo(() => JSON.stringify({ type, data }), [type, data]);
+
+      useEffect(() => {
+        if (!canvasRef.current || !data?.labels?.length) return;
+        if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; }
+        chartRef.current = new Chart(canvasRef.current, {
+          type,
+          data,
+          options: deepMerge(BASE_OPTS, options),
+        });
+        return () => { if (chartRef.current) { chartRef.current.destroy(); chartRef.current = null; } };
+      }, [dataKey]);
+
+      if (!data?.labels?.length) {
+        return (
+          <div style={{ height }}
+            className="flex items-center justify-center text-xs text-neutral-800 font-mono tracking-widest">
+            NO DATA YET
+          </div>
+        );
+      }
+      return <div style={{ height, position: 'relative' }}><canvas ref={canvasRef} /></div>;
+    }
+
+    // ============================================================
+    // SHARED UI COMPONENTS
+    // ============================================================
+    function Section({ label, badge, children }) {
+      return (
+        <div className="mb-6">
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-accent text-xs">▸</span>
+            <span className="text-xs font-mono text-neutral-600 tracking-widest uppercase">{label}</span>
+            {badge && (
+              <span className={`ml-auto text-xs font-mono px-2 py-0.5 rounded-sm border ${
+                badge === 'LIVE'
+                  ? 'border-green-900 text-green-600 bg-green-950'
+                  : badge === 'PARTIAL'
+                  ? 'border-yellow-900 text-yellow-700 bg-yellow-950'
+                  : 'border-neutral-800 text-neutral-700'
+              }`}>{badge}</span>
+            )}
+          </div>
+          {children}
+        </div>
+      );
+    }
+
+    function Card({ children, className = '' }) {
+      return (
+        <div className={`bg-surface border border-neutral-800 rounded-sm ${className}`}>
+          {children}
+        </div>
+      );
+    }
+
+    function StatCard({ label, value, sub, accent }) {
+      return (
+        <div className="bg-surface border border-neutral-800 rounded-sm p-3 flex flex-col gap-1">
+          <div className={`font-bebas text-4xl leading-none ${accent ? 'text-accent' : 'text-white'}`}>
+            {value ?? '—'}
+          </div>
+          <div className="text-xs text-neutral-600 font-mono">{label}</div>
+          {sub && <div className="text-xs text-neutral-700 font-mono">{sub}</div>}
+        </div>
+      );
+    }
+
+    function Badge({ children, color = '#e8501a' }) {
+      return (
+        <span className="text-xs font-mono px-2 py-0.5 rounded-sm shrink-0"
+          style={{ background: color + '22', color }}>
+          {children}
+        </span>
+      );
+    }
+
+    function EmptyState({ message }) {
+      return (
+        <div className="text-center py-10 text-neutral-800 font-mono text-xs tracking-widest">
+          {message || 'NO DATA YET'}
+        </div>
+      );
+    }
+
+    function PendingCard({ title, description, metrics = [] }) {
+      return (
+        <Card className="p-4 mb-3">
+          <div className="flex items-center justify-between mb-3">
+            <div className="font-bebas text-xl text-neutral-600">{title}</div>
+            <span className="text-xs font-mono text-neutral-700 border border-neutral-800 px-2 py-0.5 rounded-sm">
+              PENDING CONNECTION
+            </span>
+          </div>
+          <div className="text-xs text-neutral-700 font-mono leading-relaxed mb-4">{description}</div>
+          <div className="grid grid-cols-2 gap-2">
+            {metrics.map((m, i) => (
+              <div key={i} className="border border-neutral-900 rounded-sm p-2">
+                <div className="text-xs text-neutral-800 font-mono">{m.label}</div>
+                <div className="font-bebas text-2xl text-neutral-800 mt-0.5">—</div>
+              </div>
+            ))}
+          </div>
+        </Card>
+      );
+    }
+
+    // ============================================================
+    // OVERVIEW SCREEN
+    // ============================================================
+    function MuscleGroupBars({ data }) {
+      const rows = Object.entries(data)
+        .filter(([g, n]) => !['Recovery', 'Cardio', 'Other'].includes(g) && n > 0)
+        .sort(([, a], [, b]) => b - a);
+      if (!rows.length) return <EmptyState message="Log a workout this week" />;
+      const max = rows[0][1];
+      return (
+        <div className="space-y-2.5">
+          {rows.map(([g, sets]) => (
+            <div key={g} className="flex items-center gap-3">
+              <div className="text-xs font-mono text-neutral-700 w-20 shrink-0 uppercase">{g}</div>
+              <div className="flex-1 bg-neutral-900 rounded-sm h-5 overflow-hidden">
+                <div
+                  className="h-full flex items-center px-2 transition-all duration-500"
+                  style={{
+                    width: `${(sets / max) * 100}%`,
+                    background: MUSCLE_COLORS[g] || '#e8501a',
+                    minWidth: 28,
+                  }}
+                >
+                  <span className="font-mono font-bold text-white" style={{ fontSize: 10 }}>{sets}</span>
+                </div>
+              </div>
+            </div>
+          ))}
+        </div>
+      );
+    }
+
+    function OverviewScreen({ sessions }) {
+      const stats    = useMemo(() => getWeeklyStats(sessions), [sessions]);
+      const surfData = useMemo(() => getSurfData(sessions, 21), [sessions]);
+      const lastSession = sessions.find(s => !s.template_id?.includes('rest'));
+
+      const avgReadiness = useMemo(() => {
+        const recent = sessions.slice(0, 7).filter(s => s.readiness != null);
+        if (!recent.length) return null;
+        return Math.round(recent.reduce((a, s) => a + s.readiness, 0) / recent.length);
+      }, [sessions]);
+
+      const loadLabel = stats.loadDelta > 10  ? 'LOADING PHASE'    :
+                        stats.loadDelta > 3   ? 'SLIGHT INCREASE'  :
+                        stats.loadDelta < -10 ? 'DELOAD'           :
+                        stats.loadDelta < -3  ? 'SLIGHT DECREASE'  : 'MAINTENANCE';
+      const loadColor = Math.abs(stats.loadDelta) <= 3 ? '#f59e0b' :
+                        stats.loadDelta > 0            ? '#e8501a' : '#22c55e';
+
+      // Surf the curve: mixed bar + line chart
+      const surfChartData = {
+        labels: surfData.map(d => d.label),
+        datasets: [
+          {
+            type: 'bar',
+            label: 'Sets',
+            data: surfData.map(d => d.sets),
+            backgroundColor: surfData.map(d =>
+              d.sets > 0 ? 'rgba(232,80,26,0.8)' : 'rgba(30,30,30,0.5)'
+            ),
+            borderRadius: 2,
+            yAxisID: 'y',
+            order: 2,
+          },
+          {
+            type: 'line',
+            label: 'Readiness',
+            data: surfData.map(d => d.readiness),
+            borderColor: '#22c55e',
+            backgroundColor: 'transparent',
+            borderWidth: 2,
+            tension: 0.4,
+            pointRadius: surfData.map(d => d.readiness != null ? 3 : 0),
+            pointBackgroundColor: '#22c55e',
+            yAxisID: 'y1',
+            spanGaps: true,
+            order: 1,
+          },
+        ],
+      };
+
+      const surfOptions = {
+        scales: {
+          x: { ticks: { maxTicksLimit: 6 } },
+          y: {
+            position: 'left',
+            min: 0,
+            max: Math.max(60, stats.totalSets + 10),
+            ticks: { color: 'rgba(232,80,26,0.4)', font: CHART_FONT, stepSize: 20 },
+            grid: { color: '#181818' },
+            border: { display: false },
+          },
+          y1: {
+            position: 'right',
+            min: 0,
+            max: 100,
+            ticks: { color: 'rgba(34,197,94,0.4)', font: CHART_FONT, stepSize: 25 },
+            grid: { drawOnChartArea: false },
+            border: { display: false },
+          },
+        },
+        plugins: {
+          tooltip: {
+            callbacks: {
+              label: ctx => ctx.dataset.label === 'Sets'
+                ? ` ${ctx.raw} sets`
+                : ctx.raw != null ? ` readiness: ${ctx.raw}` : null,
+            },
+          },
+        },
+      };
+
+      return (
+        <div className="pb-24">
+          <Section label="THIS WEEK">
+            <div className="grid grid-cols-4 gap-2">
+              <StatCard label="DAYS"   value={stats.daysTrained}                                         accent />
+              <StatCard label="SETS"   value={stats.totalSets   || '—'} />
+              <StatCard label="VOLUME" value={stats.totalVolume  ? fmtVolume(stats.totalVolume) : '—'} sub="lbs" />
+              <StatCard label="AVG RDY" value={avgReadiness ?? '—'} />
+            </div>
+          </Section>
+
+          <Section label="SURF THE CURVE · 21 DAYS">
+            <Card className="p-3">
+              <ChartCanvas type="bar" data={surfChartData} options={surfOptions} height={190} />
+              <div className="flex gap-4 mt-2 text-xs text-neutral-700 font-mono">
+                <span><span style={{ color: 'rgba(232,80,26,0.8)' }}>█</span> SETS (L)</span>
+                <span><span className="text-green-800">—</span> READINESS (R)</span>
+                <span className="ml-auto text-neutral-800">HRV · RHR OVERLAY PENDING</span>
+              </div>
+            </Card>
+          </Section>
+
+          <Section label="MUSCLE BALANCE · THIS WEEK">
+            <Card className="p-4">
+              <MuscleGroupBars data={stats.muscleGroupSets} />
+            </Card>
+          </Section>
+
+          <Section label="TRAINING LOAD">
+            <Card className="p-4">
+              <div className="flex items-center justify-between">
+                <div>
+                  <div className="text-xs text-neutral-700 font-mono mb-1">VS PRIOR WEEK</div>
+                  <div className="font-bebas text-4xl" style={{ color: loadColor }}>
+                    {stats.loadDelta > 0 ? '+' : ''}{stats.loadDelta} SETS
+                  </div>
+                  <div className="text-xs font-mono mt-1" style={{ color: loadColor }}>{loadLabel}</div>
+                </div>
+                <div className="text-right text-xs font-mono space-y-1.5">
+                  <div className="text-neutral-800">HRV OVERLAY</div>
+                  <div className="text-neutral-800">EIGHT SLEEP · PENDING</div>
+                  <div className="text-neutral-800">ULTRAHUMAN · PENDING</div>
+                </div>
+              </div>
+            </Card>
+          </Section>
+
+          {lastSession && (
+            <Section label="LAST SESSION">
+              <Card className="p-4">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <div className="font-mono font-bold text-sm text-white">{lastSession.template_name}</div>
+                    <div className="text-xs text-neutral-600 font-mono mt-1">
+                      {daysSince(localDate(lastSession.date_local))} · {fmtDuration(lastSession.duration_seconds)} · {lastSession.total_sets_logged} sets
+                    </div>
+                  </div>
+                  {lastSession.readiness != null && <Badge>{lastSession.readiness} RDY</Badge>}
+                </div>
+              </Card>
+            </Section>
+          )}
+        </div>
+      );
+    }
+
+    // ============================================================
+    // STRENGTH SCREEN
+    // ============================================================
+    function LiftCard({ lift, sessions }) {
+      const isPullup  = lift.id === 'pullup';
+      const history   = useMemo(() => getLiftHistory(sessions, lift.aliases, isPullup), [sessions]);
+
+      if (!history.length) {
+        return (
+          <Card className="p-4 mb-3">
+            <div className="font-bebas text-2xl" style={{ color: lift.color }}>{lift.name}</div>
+            <div className="text-xs text-neutral-800 font-mono mt-1">NO DATA LOGGED YET</div>
+          </Card>
+        );
+      }
+
+      const pr     = history.reduce((b, p) => p.e1rm > b.e1rm ? p : b, history[0]);
+      const recent = history[history.length - 1];
+      const trend  = history.length >= 2 ? recent.e1rm - history[history.length - 2].e1rm : 0;
+      const trendColor = trend > 0 ? '#22c55e' : trend < 0 ? '#ef4444' : '#555';
+
+      const displayLast = isPullup
+        ? recent.weight === ATHLETE_BW
+          ? `BW × ${recent.reps}`
+          : `+${recent.weight - ATHLETE_BW} × ${recent.reps}`
+        : `${recent.weight} × ${recent.reps}`;
+
+      const chartData = {
+        labels: history.map(p => fmtDate(p.date)),
+        datasets: [{
+          data: history.map(p => p.e1rm),
+          borderColor: lift.color,
+          backgroundColor: lift.color + '12',
+          borderWidth: 2,
+          tension: 0.3,
+          fill: true,
+          pointRadius: history.length > 12 ? 2 : 4,
+          pointBackgroundColor: lift.color,
+        }],
+      };
+
+      return (
+        <Card className="p-4 mb-3">
+          <div className="flex items-start justify-between mb-3">
+            <div>
+              <div className="font-bebas text-2xl leading-none" style={{ color: lift.color }}>{lift.name}</div>
+              <div className="text-xs text-neutral-600 font-mono mt-1">
+                LAST: {displayLast} · 1RM ~{recent.e1rm}
+              </div>
+            </div>
+            <div className="text-right shrink-0">
+              <div className="text-xs text-neutral-700 font-mono">PR</div>
+              <div className="font-mono font-bold text-lg text-white">
+                {pr.e1rm}<span className="text-neutral-600 text-xs"> lbs</span>
+              </div>
+              {trend !== 0 && (
+                <div className="text-xs font-mono" style={{ color: trendColor }}>
+                  {trend > 0 ? '▲' : '▼'} {Math.abs(trend)}
+                </div>
+              )}
+            </div>
+          </div>
+          <ChartCanvas
+            type="line"
+            data={chartData}
+            options={{ plugins: { tooltip: { callbacks: { label: ctx => ` est. 1RM: ${ctx.raw} lbs` } } } }}
+            height={110}
+          />
+          {history.length > 1 && (
+            <div className="flex justify-between text-xs text-neutral-800 font-mono mt-2">
+              <span>{history.length} SESSIONS</span>
+              <span>{history[0].e1rm} → {recent.e1rm} LBS</span>
+            </div>
+          )}
+        </Card>
+      );
+    }
+
+    function StrengthScreen({ sessions }) {
+      return (
+        <div className="pb-24">
+          <Section label="KEY LIFTS · EST. 1RM TREND">
+            {KEY_LIFTS.map(lift => (
+              <LiftCard key={lift.id} lift={lift} sessions={sessions} />
+            ))}
+          </Section>
+        </div>
+      );
+    }
+
+    // ============================================================
+    // BODY COMP SCREEN
+    // ============================================================
+    function BodyScreen({ measurements }) {
+      const sorted = useMemo(
+        () => [...measurements].sort((a, b) => new Date(a.date) - new Date(b.date)),
+        [measurements]
+      );
+      const latest = sorted[sorted.length - 1];
+      const lm = latest?.measurements || {};
+      const lc = latest?.calculated   || {};
+
+      const wHistory = sorted.filter(m => m.measurements?.weight);
+      const bHistory = sorted.filter(m => m.calculated?.bf_percent);
+
+      const weightData = {
+        labels: wHistory.map(m => fmtDate(m.date)),
+        datasets: [
+          {
+            label: 'Weight',
+            data: wHistory.map(m => m.measurements.weight),
+            borderColor: '#e8501a',
+            backgroundColor: 'rgba(232,80,26,0.07)',
+            borderWidth: 2,
+            tension: 0.3,
+            fill: true,
+            pointRadius: 4,
+            pointBackgroundColor: '#e8501a',
+          },
+          {
+            label: 'Target',
+            data: wHistory.map(() => TARGET_WEIGHT),
+            borderColor: '#22c55e',
+            borderDash: [5, 4],
+            borderWidth: 1.5,
+            pointRadius: 0,
+            fill: false,
+          },
+        ],
+      };
+
+      const bfData = {
+        labels: bHistory.map(m => fmtDate(m.date)),
+        datasets: [
+          {
+            label: 'BF%',
+            data: bHistory.map(m => m.calculated.bf_percent),
+            borderColor: '#9b59b6',
+            backgroundColor: 'rgba(155,89,182,0.07)',
+            borderWidth: 2,
+            tension: 0.3,
+            fill: true,
+            pointRadius: 4,
+            pointBackgroundColor: '#9b59b6',
+          },
+          {
+            label: 'Target',
+            data: bHistory.map(() => TARGET_BF),
+            borderColor: '#22c55e',
+            borderDash: [5, 4],
+            borderWidth: 1.5,
+            pointRadius: 0,
+            fill: false,
+          },
+        ],
+      };
+
+      const bfOptions = { scales: { y: { ticks: { callback: v => `${v}%` } } } };
+
+      const KEY_MEAS = [
+        { key: 'weight',     label: 'WEIGHT', unit: 'lbs', target: TARGET_WEIGHT },
+        { key: 'chest',      label: 'CHEST',  unit: '"',   target: 46 },
+        { key: 'waist',      label: 'WAIST',  unit: '"',   target: 32 },
+        { key: 'left_arm',   label: 'ARM',    unit: '"',   target: 17 },
+        { key: 'left_thigh', label: 'THIGH',  unit: '"',   target: null },
+        { key: 'neck',       label: 'NECK',   unit: '"',   target: null },
+      ];
+
+      const targetBlock = (
+        <Card className="p-4">
+          <div className="space-y-2 text-xs font-mono">
+            {[
+              ['TARGET WEIGHT',    '190 lbs'],
+              ['TARGET BF%',       '10–12%'],
+              ['TARGET LEAN MASS', '~168–171 lbs'],
+              ['CURRENT GAP',      lm.weight ? `${(lm.weight - TARGET_WEIGHT).toFixed(0)} lbs to drop` : '—'],
+            ].map(([k, v]) => (
+              <div key={k} className="flex justify-between">
+                <span className="text-neutral-600">{k}</span>
+                <span className={k === 'CURRENT GAP' ? 'text-accent' : 'text-white'}>{v}</span>
+              </div>
+            ))}
+          </div>
+        </Card>
+      );
+
+      if (!measurements.length) {
+        return (
+          <div className="pb-24">
+            <Section label="BODY COMPOSITION">
+              <Card className="p-4">
+                <EmptyState message="No measurements logged yet" />
+              </Card>
+            </Section>
+            <Section label="HEMSWORTH TARGET">{targetBlock}</Section>
+          </div>
+        );
+      }
+
+      return (
+        <div className="pb-24">
+          <Section label="CURRENT COMPOSITION">
+            <div className="grid grid-cols-3 gap-2">
+              <StatCard
+                label="WEIGHT"
+                value={lm.weight ?? '—'}
+                sub={lm.weight ? `${(lm.weight - TARGET_WEIGHT) > 0 ? '+' : ''}${(lm.weight - TARGET_WEIGHT).toFixed(0)} to goal` : 'lbs'}
+                accent
+              />
+              <StatCard
+                label="BF%"
+                value={lc.bf_percent ? `${lc.bf_percent.toFixed(1)}` : '—'}
+                sub={lc.bf_percent ? `goal: ${TARGET_BF}%` : 'not logged'}
+              />
+              <StatCard
+                label="LEAN"
+                value={lc.lean_mass ? Math.round(lc.lean_mass) : '—'}
+                sub="lbs"
+              />
+            </div>
+          </Section>
+
+          {wHistory.length > 0 && (
+            <Section label="WEIGHT TREND · TARGET 190 LBS">
+              <Card className="p-3">
+                <ChartCanvas type="line" data={weightData} height={160} />
+                <div className="flex gap-4 mt-2 text-xs text-neutral-700 font-mono">
+                  <span><span className="text-accent">—</span> ACTUAL</span>
+                  <span><span className="text-green-800">- -</span> TARGET 190</span>
+                </div>
+              </Card>
+            </Section>
+          )}
+
+          {bHistory.length > 0 && (
+            <Section label={`BODY FAT % · TARGET ${TARGET_BF}%`}>
+              <Card className="p-3">
+                <ChartCanvas type="line" data={bfData} options={bfOptions} height={160} />
+              </Card>
+            </Section>
+          )}
+
+          {latest && KEY_MEAS.some(m => lm[m.key] != null) && (
+            <Section label="KEY MEASUREMENTS">
+              <Card className="p-4">
+                <div className="space-y-3">
+                  {KEY_MEAS.filter(m => lm[m.key] != null).map(m => {
+                    const val  = lm[m.key];
+                    const diff = m.target != null ? val - m.target : null;
+                    return (
+                      <div key={m.key} className="flex items-center gap-3">
+                        <div className="text-xs font-mono text-neutral-600 w-14 shrink-0">{m.label}</div>
+                        {m.target && (
+                          <div className="flex-1 bg-neutral-900 h-1.5 rounded-full overflow-hidden">
+                            <div
+                              className="h-full rounded-full transition-all"
+                              style={{
+                                width: `${Math.min((val / (m.target * 1.25)) * 100, 100)}%`,
+                                background: Math.abs(diff) < 1 ? '#22c55e' : '#e8501a',
+                              }}
+                            />
+                          </div>
+                        )}
+                        <div className="text-right shrink-0">
+                          <span className="font-mono text-sm text-white">{val}{m.unit}</span>
+                          {diff != null && (
+                            <span className="text-xs font-mono ml-2 text-neutral-700">
+                              {diff > 0 ? '+' : ''}{diff.toFixed(1)}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+                <div className="text-xs text-neutral-800 font-mono mt-4 pt-3 border-t border-neutral-900">
+                  LAST MEASURED: {fmtDate(latest.date)}
+                </div>
+              </Card>
+            </Section>
+          )}
+
+          <Section label="HEMSWORTH TARGET">{targetBlock}</Section>
+        </div>
+      );
+    }
+
+    // ============================================================
+    // CARDIO SCREEN
+    // ============================================================
+    function CardioScreen({ sessions }) {
+      const rowingSessions = useMemo(() => getRowingSessions(sessions), [sessions]);
+
+      return (
+        <div className="pb-24">
+          {/* A — Polar H10: Workout HR / HRV */}
+          <Section label="WORKOUT HR · HRV" badge="PENDING">
+            <PendingCard
+              title="POLAR H10"
+              description="Connect Polar H10 via n8n to overlay per-workout HR and HRV (RMSSD ms) on the Surf the Curve chart. Will appear as a third line on the recovery axis."
+              metrics={[
+                { label: 'AVG WORKOUT HR' },
+                { label: 'MAX HR' },
+                { label: 'HRV (RMSSD ms)' },
+                { label: 'HR ZONES' },
+              ]}
+            />
+          </Section>
+
+          {/* B — Running */}
+          <Section label="RUNNING" badge="PENDING">
+            <PendingCard
+              title="RUNNING APP"
+              description="Connect running app via n8n. Pace trend line, HR zone breakdown stacked bar, and distance tracking populate here."
+              metrics={[
+                { label: 'AVG PACE' },
+                { label: 'DISTANCE (KM)' },
+                { label: 'AVG HR' },
+                { label: 'ZONE DIST %' },
+              ]}
+            />
+          </Section>
+
+          {/* C — Concept2 ErgData (partial data from workout log) */}
+          <Section
+            label="ROWING · CONCEPT2"
+            badge={rowingSessions.length ? 'PARTIAL' : 'PENDING'}
+          >
+            {rowingSessions.length > 0 && (
+              <Card className="p-4 mb-3">
+                <div className="flex justify-between text-xs font-mono text-neutral-600 mb-3">
+                  <span>{rowingSessions.length} SESSION{rowingSessions.length !== 1 ? 'S' : ''} FROM WORKOUT LOG</span>
+                  <span>ERGDATA PENDING</span>
+                </div>
+                <div className="space-y-2.5">
+                  {rowingSessions.slice(0, 6).map((r, i) => (
+                    <div key={i} className="flex items-center justify-between text-xs font-mono">
+                      <span className="text-white">{fmtDate(r.date)}</span>
+                      <span className="text-neutral-500">{fmtDuration(r.duration)}</span>
+                      <span className="text-neutral-800">split · SPM · HR via ErgData</span>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
+            <PendingCard
+              title="CONCEPT2 ERGDATA"
+              description="Connect ErgData via n8n for split times (/500m), stroke rate (SPM), per-stroke heart rate, and distance. Zone 2 row sessions from your workout log already surface above."
+              metrics={[
+                { label: 'AVG SPLIT /500m' },
+                { label: 'STROKE RATE SPM' },
+                { label: 'DISTANCE (m)' },
+                { label: 'AVG HR' },
+              ]}
+            />
+          </Section>
+        </div>
+      );
+    }
+
+    // ============================================================
+    // HISTORY SCREEN
+    // ============================================================
+    function SessionCard({ session }) {
+      const [open, setOpen] = useState(false);
+      const exercises = useMemo(() => parseExercises(session.exercises), [session.exercises]);
+      const rdyColor  = !session.readiness ? '#555' :
+                         session.readiness >= 85 ? '#22c55e' :
+                         session.readiness >= 70 ? '#f59e0b' :
+                         session.readiness >= 55 ? '#e8501a' : '#ef4444';
+
+      return (
+        <div className="mb-2 border border-neutral-800 rounded-sm overflow-hidden bg-surface">
+          <div
+            className="p-4 flex items-start gap-3 cursor-pointer"
+            onClick={() => setOpen(o => !o)}
+          >
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center gap-2 flex-wrap mb-1">
+                <span className="font-bebas text-xl leading-none text-white">{session.template_name}</span>
+                {session.readiness != null && <Badge color={rdyColor}>{session.readiness} RDY</Badge>}
+              </div>
+              <div className="text-xs text-neutral-600 font-mono">
+                {fmtDate(localDate(session.date_local))} · {fmtDuration(session.duration_seconds)} · {session.total_sets_logged} sets
+              </div>
+            </div>
+            <span className="text-neutral-700 text-xs mt-1 shrink-0">{open ? '▲' : '▼'}</span>
+          </div>
+
+          {open && (
+            <div className="border-t border-neutral-900">
+              {exercises.length === 0 ? (
+                <div className="px-4 py-3 text-xs text-neutral-800 font-mono">NO EXERCISE DATA</div>
+              ) : exercises.flatMap((ex, i) => {
+                const g     = getMuscleGroup(ex.id);
+                const color = MUSCLE_COLORS[g] || '#444';
+                if (!ex.sets.length) return [];
+                return [(
+                  <div
+                    key={i}
+                    className="px-4 py-2.5 border-b border-neutral-900 last:border-0 flex items-center gap-2"
+                  >
+                    <div className="w-1.5 h-1.5 rounded-full shrink-0" style={{ background: color }} />
+                    <span className="text-xs font-mono text-neutral-300 flex-1 min-w-0 truncate">{ex.name}</span>
+                    <div className="text-xs text-neutral-600 font-mono shrink-0">
+                      {ex.sets.map((s, si) => (
+                        <span key={si}>
+                          {si > 0 && <span className="text-neutral-800"> / </span>}
+                          {s.weight ? `${s.weight}×${s.reps}` : s.reps || '—'}
+                        </span>
+                      ))}
+                    </div>
+                  </div>
+                )];
+              })}
+              {session.emom?.completed && (
+                <div className="px-4 py-2 text-xs font-mono text-neutral-700 border-t border-neutral-900">
+                  EMOM COMPLETED
+                </div>
+              )}
+              {session.amrap?.rounds > 0 && (
+                <div className="px-4 py-2 text-xs font-mono text-neutral-700 border-t border-neutral-900">
+                  AMRAP: {session.amrap.rounds} ROUNDS
+                </div>
+              )}
+            </div>
+          )}
+        </div>
+      );
+    }
+
+    function HistoryScreen({ sessions }) {
+      const [filter, setFilter] = useState('all');
+      const templateIds = useMemo(
+        () => [...new Set(sessions.map(s => s.template_id).filter(Boolean))],
+        [sessions]
+      );
+      const display = useMemo(() => {
+        const base = filter === 'all' ? sessions : sessions.filter(s => s.template_id === filter);
+        return [...base].sort((a, b) => new Date(b.date_local) - new Date(a.date_local));
+      }, [sessions, filter]);
+
+      return (
+        <div className="pb-24">
+          <Section label={`WORKOUT HISTORY · ${sessions.length} SESSIONS`}>
+            <div className="flex gap-2 mb-4 overflow-x-auto pb-1 -mx-4 px-4">
+              {['all', ...templateIds.slice(0, 7)].map(id => (
+                <button
+                  key={id}
+                  onClick={() => setFilter(id)}
+                  className={`text-xs font-mono px-3 py-1.5 rounded-sm shrink-0 border transition-colors ${
+                    filter === id
+                      ? 'border-accent text-accent'
+                      : 'border-neutral-800 text-neutral-700 hover:border-neutral-700'
+                  }`}
+                >
+                  {id === 'all' ? 'ALL' : id.replace(/_/g, ' ').toUpperCase().slice(0, 12)}
+                </button>
+              ))}
+            </div>
+            {display.length === 0
+              ? <EmptyState message="No sessions logged yet" />
+              : display.map((s, i) => <SessionCard key={s.id || i} session={s} />)
+            }
+          </Section>
+        </div>
+      );
+    }
+
+    // ============================================================
+    // NAVIGATION
+    // ============================================================
+    const TABS = [
+      { id: 'overview',  label: 'OVERVIEW',  icon: '⊞' },
+      { id: 'strength',  label: 'STRENGTH',  icon: '↑' },
+      { id: 'body',      label: 'BODY',      icon: '◎' },
+      { id: 'cardio',    label: 'CARDIO',    icon: '♡' },
+      { id: 'history',   label: 'HISTORY',   icon: '◷' },
+    ];
+
+    function BottomNav({ active, onChange }) {
+      return (
+        <div
+          className="fixed bottom-0 left-0 right-0 bg-surface border-t border-neutral-800 z-50"
+          style={{ paddingBottom: 'env(safe-area-inset-bottom, 0px)' }}
+        >
+          <div className="grid grid-cols-5">
+            {TABS.map(t => (
+              <button
+                key={t.id}
+                onClick={() => onChange(t.id)}
+                className={`py-3 flex flex-col items-center gap-0.5 transition-colors ${
+                  active === t.id ? 'text-accent' : 'text-neutral-700'
+                }`}
+              >
+                <span className="text-base leading-none">{t.icon}</span>
+                <span className="font-mono" style={{ fontSize: 9, letterSpacing: '0.04em' }}>{t.label}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      );
+    }
+
+    // ============================================================
+    // APP ROOT
+    // ============================================================
+    function LoadingScreen() {
+      return (
+        <div className="fixed inset-0 flex flex-col items-center justify-center gap-5"
+          style={{ background: '#0a0a0a' }}>
+          <div className="font-bebas text-6xl text-accent tracking-widest">IRON ATLAS</div>
+          <div className="text-xs font-mono text-neutral-800 tracking-widest">LOADING TRAINING DATA</div>
+          <div className="w-40 h-px bg-neutral-900 overflow-hidden rounded-full">
+            <div className="h-full bg-accent animate-pulse" style={{ width: '60%' }} />
+          </div>
+        </div>
+      );
+    }
+
+    function App() {
+      const [sessions,     setSessions]     = useState([]);
+      const [measurements, setMeasurements] = useState([]);
+      const [loading,      setLoading]      = useState(true);
+      const [error,        setError]        = useState(null);
+      const [tab,          setTab]          = useState('overview');
+
+      useEffect(() => {
+        (async () => {
+          try {
+            const [{ data: sess, error: se }, { data: meas, error: me }] = await Promise.all([
+              sb.from('workout_sessions')
+                .select('*')
+                .order('date_local', { ascending: false })
+                .limit(300),
+              sb.from('body_measurements')
+                .select('*')
+                .order('date', { ascending: false })
+                .limit(100),
+            ]);
+            if (se) throw new Error(se.message);
+            setSessions(sess || []);
+            // body_measurements table may not exist yet — treat as empty
+            setMeasurements(me ? [] : (meas || []));
+          } catch (e) {
+            setError(e.message);
+          } finally {
+            setLoading(false);
+          }
+        })();
+      }, []);
+
+      if (loading) return <LoadingScreen />;
+
+      const dateStr = new Date().toLocaleDateString('en-US', {
+        weekday: 'short', month: 'short', day: 'numeric',
+      }).toUpperCase();
+
+      return (
+        <div style={{ background: '#0a0a0a', minHeight: '100vh', fontFamily: 'IBM Plex Mono, monospace', color: '#e8e8e8' }}>
+          {/* ── Header ── */}
+          <div className="sticky top-0 z-40 border-b border-neutral-900" style={{ background: '#0a0a0a' }}>
+            <div className="px-4 py-3 flex items-center justify-between">
+              <div className="font-bebas text-2xl text-accent tracking-widest">IRON ATLAS</div>
+              <div className="text-xs text-neutral-700 font-mono">{dateStr}</div>
+            </div>
+          </div>
+
+          {/* ── Error banner ── */}
+          {error && (
+            <div className="mx-4 mt-3 p-3 border border-red-900 rounded-sm">
+              <div className="text-xs font-mono text-red-600">SUPABASE ERROR: {error}</div>
+            </div>
+          )}
+
+          {/* ── Screen content ── */}
+          <div className="px-4 pt-5">
+            {tab === 'overview'  && <OverviewScreen  sessions={sessions}                 />}
+            {tab === 'strength'  && <StrengthScreen  sessions={sessions}                 />}
+            {tab === 'body'      && <BodyScreen       measurements={measurements}         />}
+            {tab === 'cardio'    && <CardioScreen     sessions={sessions}                 />}
+            {tab === 'history'   && <HistoryScreen    sessions={sessions}                 />}
+          </div>
+
+          <BottomNav active={tab} onChange={setTab} />
+        </div>
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(<App />);
+  </script>
+</body>
+</html>
