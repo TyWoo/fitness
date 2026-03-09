@@ -18,6 +18,7 @@
   <script src="https://cdn.jsdelivr.net/npm/htm@3/dist/htm.umd.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+  <script src="https://accounts.google.com/gsi/client" async></script>
 
   <style>
     *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
@@ -160,6 +161,11 @@
     // ── Config ───────────────────────────────────────────────────
     const SB_URL  = 'https://wnwkraukvizulycjssyk.supabase.co';
     const SB_KEY  = 'sb_publishable__XnF9a593J_CgLzof3k-Mw_AA-jKpl6';
+    const GFIT_CLIENT_ID = 'YOUR_GOOGLE_CLIENT_ID'; // ← replace after Google Cloud setup
+    const GFIT_SCOPES = [
+      'https://www.googleapis.com/auth/fitness.activity.read',
+      'https://www.googleapis.com/auth/fitness.heart_rate.read',
+    ].join(' ');
     const ATHLETE_BW    = 220;
     const TARGET_WEIGHT = 190;
     const TARGET_BF     = 11;
@@ -716,17 +722,142 @@
         </div>`;
     }
 
+    // ── GOOGLE FIT ───────────────────────────────────────────────
+    function gfitConnect(callback) {
+      if (typeof google === 'undefined') {
+        alert('Google Identity Services not loaded yet — try again in a moment.');
+        return;
+      }
+      const client = google.accounts.oauth2.initTokenClient({
+        client_id: GFIT_CLIENT_ID,
+        scope: GFIT_SCOPES,
+        callback: (resp) => {
+          if (resp.error) { console.error('GFit OAuth error:', resp); return; }
+          sessionStorage.setItem('gfit_token', resp.access_token);
+          callback(resp.access_token);
+        },
+      });
+      client.requestAccessToken();
+    }
+
+    async function gfitFetch(token) {
+      const endMs   = Date.now();
+      const startMs = endMs - 30 * 24 * 60 * 60 * 1000;
+      const startISO = new Date(startMs).toISOString();
+      const endISO   = new Date(endMs).toISOString();
+
+      // 1. Aggregate daily steps + calories
+      const aggRes = await fetch('https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          aggregateBy: [
+            { dataTypeName: 'com.google.step_count.delta' },
+            { dataTypeName: 'com.google.calories.expended' },
+          ],
+          bucketByTime: { durationMillis: 86400000 },
+          startTimeMillis: startMs,
+          endTimeMillis: endMs,
+        }),
+      });
+      const aggJson = await aggRes.json();
+
+      const days = (aggJson.bucket || []).map(b => {
+        const dateLabel = new Date(+b.startTimeMillis).toISOString().slice(0, 10);
+        let steps = 0, calories = 0;
+        for (const ds of b.dataset) {
+          for (const p of ds.point) {
+            if (ds.dataSourceId.includes('step_count')) steps    += (p.value[0]?.intVal || 0);
+            else                                         calories += (p.value[0]?.fpVal  || 0);
+          }
+        }
+        return { date: dateLabel, steps: Math.round(steps), calories: Math.round(calories) };
+      }).filter(d => d.steps > 0 || d.calories > 0);
+
+      // 2. Running sessions (activityType=8)
+      const sessRes = await fetch(
+        `https://www.googleapis.com/fitness/v1/users/me/sessions?startTime=${startISO}&endTime=${endISO}&activityType=8`,
+        { headers: { Authorization: `Bearer ${token}` } }
+      );
+      const sessJson = await sessRes.json();
+
+      const runs = await Promise.all((sessJson.session || []).map(async s => {
+        const sMs = +s.startTimeMillis, eMs = +s.endTimeMillis;
+        const durMin = Math.round((eMs - sMs) / 60000);
+        const dateLocal = new Date(sMs).toISOString().slice(0, 10);
+
+        // Fetch distance for this session
+        const dsRes = await fetch('https://www.googleapis.com/fitness/v1/users/me/dataset:aggregate', {
+          method: 'POST',
+          headers: { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            aggregateBy: [
+              { dataTypeName: 'com.google.distance.delta' },
+              { dataTypeName: 'com.google.heart_rate.bpm' },
+            ],
+            startTimeMillis: sMs,
+            endTimeMillis: eMs,
+          }),
+        });
+        const dsJson = await dsRes.json();
+        let distanceM = 0, avgHr = null;
+        for (const b of dsJson.bucket || []) {
+          for (const ds of b.dataset) {
+            for (const p of ds.point) {
+              if (ds.dataSourceId.includes('distance')) distanceM += (p.value[0]?.fpVal || 0);
+              else if (ds.dataSourceId.includes('heart_rate')) {
+                const vals = p.value.map(v => v.fpVal).filter(Boolean);
+                if (vals.length) avgHr = Math.round(vals.reduce((a, b) => a + b, 0) / vals.length);
+              }
+            }
+          }
+        }
+        const distKm = distanceM / 1000;
+        const avgPaceKm = distKm > 0 ? `${Math.floor(durMin / distKm)}:${String(Math.round((durMin / distKm % 1) * 60)).padStart(2,'0')}` : null;
+
+        return {
+          date_local: dateLocal,
+          source: 'google_fit',
+          session_name: s.name || 'Run',
+          duration_min: durMin,
+          distance_km: distKm > 0 ? +distKm.toFixed(2) : null,
+          avg_pace_km: avgPaceKm,
+          avg_hr: avgHr,
+        };
+      }));
+
+      // 3. Upsert running sessions to Supabase
+      if (runs.length > 0) {
+        await sb.from('cardio_sessions').upsert(runs, { onConflict: 'date_local,source' });
+      }
+
+      return { days, runs };
+    }
+
     // ── CARDIO ───────────────────────────────────────────────────
     function fmtSplit(sec) {
       if (!sec) return '—';
       return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2,'0')} /500m`;
     }
 
-    function CardioScreen({ sessions, cardioSessions }) {
+    function CardioScreen({ sessions, cardioSessions, gfitToken, gfitData, gfitLoading, onConnectGfit, onSyncGfit }) {
       const logRows   = useMemo(() => rowingSessions(sessions), [sessions]);
       const polarData = useMemo(() => (cardioSessions || []).filter(s => s.source === 'polar'),      [cardioSessions]);
       const runData   = useMemo(() => (cardioSessions || []).filter(s => s.source === 'google_fit'), [cardioSessions]);
       const rowData   = useMemo(() => (cardioSessions || []).filter(s => s.source === 'concept2'),   [cardioSessions]);
+
+      const stepsChartData = useMemo(() => {
+        if (!gfitData?.days?.length) return null;
+        const days = gfitData.days.slice(-14);
+        return {
+          labels: days.map(d => d.date.slice(5)),
+          datasets: [{
+            label: 'Steps', data: days.map(d => d.steps),
+            backgroundColor: days.map(d => d.steps >= 8000 ? 'rgba(39,174,96,0.7)' : d.steps >= 5000 ? 'rgba(232,160,26,0.7)' : 'rgba(232,80,26,0.5)'),
+            borderRadius: 3,
+          }],
+        };
+      }, [gfitData]);
 
       const lastPolar = polarData[0] || null;
       const lastRun   = runData[0]   || null;
@@ -752,8 +883,52 @@
 
       const dualYOpts = { ...BASE_OPTS, scales: { ...BASE_OPTS.scales, y2: { position:'right', grid:{ display:false }, ticks:{ color:'#333', font:CFONT } } } };
 
+      const stepsBarOpts = { ...BASE_OPTS, plugins: { ...BASE_OPTS.plugins, legend: { display: false } } };
+      const avgSteps7d = gfitData?.days ? Math.round(gfitData.days.slice(-7).reduce((s,d) => s+d.steps, 0) / Math.min(gfitData.days.slice(-7).length, 7)) : null;
+      const totalCal7d = gfitData?.days ? Math.round(gfitData.days.slice(-7).reduce((s,d) => s+d.calories, 0)) : null;
+
       return html`
         <div class="screen">
+
+          <${Section} label="GOOGLE FIT" badge=${gfitToken ? (gfitLoading ? 'SYNCING…' : 'CONNECTED') : 'NOT CONNECTED'}>
+            ${!gfitToken ? html`
+              <div class="card card-p" style=${{ textAlign:'center', padding:'20px' }}>
+                <div style=${{ fontSize:'11px', color:'#555', marginBottom:'16px', lineHeight:'1.6' }}>
+                  Connect Google Fit to sync daily steps, calories, and running sessions.
+                </div>
+                <button onClick=${onConnectGfit} style=${{
+                  background:'#4285f4', color:'#fff', border:'none', borderRadius:'6px',
+                  padding:'10px 24px', fontFamily:"'IBM Plex Mono', monospace", fontSize:'11px',
+                  letterSpacing:'0.08em', cursor:'pointer', fontWeight:'600',
+                }}>CONNECT GOOGLE FIT</button>
+              </div>
+            ` : html`
+              ${gfitData?.days?.length && html`
+                <div class="stat-grid" style=${{ gridTemplateColumns:'repeat(3,1fr)', marginBottom:'12px' }}>
+                  <div class="stat-card"><div class="stat-val">${avgSteps7d ? avgSteps7d.toLocaleString() : '—'}</div><div class="stat-label">AVG STEPS/DAY</div></div>
+                  <div class="stat-card"><div class="stat-val">${totalCal7d ? totalCal7d.toLocaleString() : '—'}</div><div class="stat-label">CAL (7D)</div></div>
+                  <div class="stat-card"><div class="stat-val accent">${gfitData.runs?.length || 0}</div><div class="stat-label">RUNS (30D)</div></div>
+                </div>
+              `}
+              ${stepsChartData && html`
+                <div class="card card-p" style=${{ marginBottom:'12px' }}>
+                  <div style=${{ fontSize:'10px', color:'#555', marginBottom:'8px' }}>DAILY STEPS · LAST 14 DAYS</div>
+                  <${ChartCanvas} type="bar" data=${stepsChartData} options=${stepsBarOpts} height=${100} />
+                  <div style=${{ display:'flex', gap:'12px', marginTop:'6px', fontSize:'9px', color:'#555' }}>
+                    <span><span style=${{ color:'rgba(39,174,96,0.7)' }}>■</span> ≥8k</span>
+                    <span><span style=${{ color:'rgba(232,160,26,0.7)' }}>■</span> 5–8k</span>
+                    <span><span style=${{ color:'rgba(232,80,26,0.5)' }}>■</span> &lt;5k</span>
+                  </div>
+                </div>
+              `}
+              <button onClick=${onSyncGfit} disabled=${gfitLoading} style=${{
+                width:'100%', background:'#1a1a1a', color: gfitLoading ? '#555' : '#888',
+                border:'1px solid #222', borderRadius:'6px', padding:'10px',
+                fontFamily:"'IBM Plex Mono', monospace", fontSize:'10px', letterSpacing:'0.08em',
+                cursor: gfitLoading ? 'default' : 'pointer',
+              }}>${gfitLoading ? 'SYNCING…' : '↻ SYNC NOW'}</button>
+            `}
+          <//>
 
           <${Section} label="WORKOUT HR · HRV" badge=${polarData.length ? 'LIVE' : 'PENDING'}>
             ${polarData.length === 0 ? html`
@@ -932,6 +1107,38 @@
       const [loading,       setLoading]       = useState(true);
       const [error,         setError]         = useState(null);
       const [tab,           setTab]           = useState('overview');
+      const [gfitToken,     setGfitToken]     = useState(() => sessionStorage.getItem('gfit_token') || null);
+      const [gfitData,      setGfitData]      = useState(null);
+      const [gfitLoading,   setGfitLoading]   = useState(false);
+
+      const reloadCardio = () =>
+        sb.from('cardio_sessions').select('*').order('date_local', { ascending: false }).limit(200)
+          .then(({ data, error: ce }) => { if (!ce) setCardioSessions(data || []); });
+
+      const handleSync = async (token) => {
+        setGfitLoading(true);
+        try {
+          const data = await gfitFetch(token);
+          setGfitData(data);
+          await reloadCardio();
+        } catch (e) {
+          console.error('Google Fit sync error:', e);
+        } finally {
+          setGfitLoading(false);
+        }
+      };
+
+      const handleConnect = () => {
+        gfitConnect(async (token) => {
+          setGfitToken(token);
+          await handleSync(token);
+        });
+      };
+
+      // Auto-sync if token already exists
+      useEffect(() => {
+        if (gfitToken) handleSync(gfitToken);
+      }, []);
 
       useEffect(() => {
         Promise.all([
@@ -969,7 +1176,7 @@
           ${tab === 'overview' && html`<${OverviewScreen}  sessions=${sessions} />`}
           ${tab === 'strength' && html`<${StrengthScreen}  sessions=${sessions} />`}
           ${tab === 'body'     && html`<${BodyScreen}       measurements=${measurements} />`}
-          ${tab === 'cardio'   && html`<${CardioScreen}     sessions=${sessions} cardioSessions=${cardioSessions} />`}
+          ${tab === 'cardio'   && html`<${CardioScreen}     sessions=${sessions} cardioSessions=${cardioSessions} gfitToken=${gfitToken} gfitData=${gfitData} gfitLoading=${gfitLoading} onConnectGfit=${handleConnect} onSyncGfit=${() => handleSync(gfitToken)} />`}
           ${tab === 'history'  && html`<${HistoryScreen}    sessions=${sessions} />`}
 
           <nav class="bottom-nav">
