@@ -2,7 +2,7 @@
 // and redirects back to the dashboard with the token.
 // Required env vars: POLAR_CLIENT_ID, POLAR_CLIENT_SECRET
 
-export default async function handler(req, res) {
+module.exports = async function handler(req, res) {
   const { code, error } = req.query;
 
   if (error) {
