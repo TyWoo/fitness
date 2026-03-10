@@ -779,6 +779,56 @@ function getLastSession(templateId) {
 }
 
 // ============================================================
+// SMART PROGRESSION
+// ============================================================
+const LOWER_BODY_IDS = new Set([
+  'squat','front_squat','bss','mk_squat','mk_bss','walk_lunge','pistol',
+  'rdl','mk_rdl','nordic','hip_thrust','sl_calf','calf_raise',
+  'depth_drop','broad_jump','sl_hop','box_jump','mk_box','kb_swing',
+]);
+
+function getIncrement(ex) {
+  if (!ex.unit || ex.unit === 'BW' || ex.unit === '' || (ex.startWeight === 0 && !ex.unit.includes('lbs'))) return 0;
+  return LOWER_BODY_IDS.has(ex.id) ? 5 : 2.5;
+}
+
+function parseMinReps(repsStr) {
+  const match = String(repsStr || '').match(/\d+/);
+  return match ? parseInt(match[0]) : 8;
+}
+
+// Returns { weight, action, color } or null if no suggestion possible
+function getSuggestion(ex, lastEx, readiness) {
+  const increment = getIncrement(ex);
+  if (increment === 0 || !lastEx?.sets?.length) return null;
+
+  const minTarget  = parseMinReps(ex.reps);
+  const totalSets  = lastEx.sets.length;
+  const hitTarget  = lastEx.sets.filter(s => (parseInt(s.reps) || 0) >= minTarget).length;
+  const completion = hitTarget / totalSets;
+  const lastWeight = lastEx.sets[lastEx.sets.length - 1]?.weight || 0;
+  const lowReadiness = readiness < 70;
+
+  let weight, action, color;
+
+  if (completion === 1 && !lowReadiness) {
+    weight = lastWeight + increment;
+    action = `↑ +${increment} lbs`;
+    color  = 'var(--green)';
+  } else if (completion >= 0.5 || (completion === 1 && lowReadiness)) {
+    weight = lastWeight;
+    action = lowReadiness && completion === 1 ? '= low readiness' : '= hold';
+    color  = 'var(--yellow)';
+  } else {
+    weight = Math.max(lastWeight - increment, 0);
+    action = `↓ -${increment} lbs`;
+    color  = 'var(--red)';
+  }
+
+  return { weight, action, color };
+}
+
+// ============================================================
 // HOME SCREEN
 // ============================================================
 function renderHome() {
@@ -929,12 +979,17 @@ function renderExercises() {
 function renderExerciseInner(ex, lastSession) {
   const lastEx = lastSession?.exercises?.find(e => e.id === ex.id);
   const adjustedSets = state.readiness < 70 && state.readiness >= 55 ? Math.max(ex.sets - 1, 1) : ex.sets;
+  const suggestion = getSuggestion(ex, lastEx, state.readiness);
+
+  const suggBadge = suggestion
+    ? `<span style="font-size:10px;font-weight:700;color:${suggestion.color};background:rgba(0,0,0,0.3);border:1px solid ${suggestion.color};border-radius:5px;padding:2px 6px;margin-left:8px;opacity:0.85">${suggestion.action}</span>`
+    : '';
 
   let html = `
     <div class="eb-header" onclick="this.nextElementSibling.classList.toggle('hidden');this.querySelector('.eb-notes')?.classList.toggle('hidden')">
-      <div>
-        <div class="eb-name">${ex.name}</div>
-        <div class="eb-target">${adjustedSets} × ${ex.reps} ${ex.startWeight ? '· Start: ' + ex.startWeight + ' ' + ex.unit : ''}</div>
+      <div style="display:flex;align-items:center;flex-wrap:wrap;gap:4px">
+        <div class="eb-name">${ex.name}</div>${suggBadge}
+        <div class="eb-target" style="width:100%">${adjustedSets} × ${ex.reps} ${ex.startWeight ? '· Start: ' + ex.startWeight + ' ' + ex.unit : ''}</div>
       </div>
       <span class="eb-badge" id="badge-${ex.id}"></span>
     </div>
@@ -950,7 +1005,7 @@ function renderExerciseInner(ex, lastSession) {
     const key = `${ex.id}_${s}`;
     const prevSet = lastEx?.sets?.[s];
     const prevStr = prevSet ? `${prevSet.weight}×${prevSet.reps}` : '—';
-    const defaultWeight = prevSet?.weight || ex.startWeight || '';
+    const defaultWeight = suggestion ? suggestion.weight : (prevSet?.weight || ex.startWeight || '');
     const defaultReps = prevSet?.reps || ex.reps.replace(/[^0-9]/g, '') || '';
     const isHold = ex.isHold;
 
