@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="theme-color" content="#0a0f1a">
+<title>Food Log</title>
+<style>
+:root {
+  --bg: #0a0f1a; --card: #131b2e; --card-border: #1e2d44; --surface: #1a2540;
+  --text: #e0e6ed; --text-dim: #6b7c95; --text-muted: #3d4f68;
+  --accent: #4a90d9; --accent-dim: rgba(74,144,217,0.15);
+  --green: #2ecc71; --green-dim: rgba(46,204,113,0.12);
+  --orange: #e67e22; --red: #e74c3c; --yellow: #f1c40f;
+  --radius: 14px; --radius-sm: 10px;
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+}
+* { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+html, body { height: 100%; background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; -webkit-font-smoothing: antialiased; }
+
+.screen { display: none; min-height: 100vh; padding: 16px 16px calc(20px + var(--safe-bottom)); }
+.screen.active { display: block; }
+
+/* Header */
+.page-header { display: flex; align-items: center; gap: 12px; padding: 16px 0 20px; }
+.back-btn { background: var(--card); border: 1px solid var(--card-border); color: var(--text); width: 36px; height: 36px; border-radius: 10px; font-size: 16px; cursor: pointer; display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+.page-title { font-size: 20px; font-weight: 800; }
+.page-date { font-size: 12px; color: var(--text-dim); margin-top: 1px; }
+
+/* Meal type tabs */
+.meal-tabs { display: flex; gap: 6px; margin-bottom: 20px; overflow-x: auto; padding-bottom: 2px; }
+.meal-tab { background: var(--card); border: 1px solid var(--card-border); color: var(--text-dim); padding: 7px 14px; border-radius: 20px; font-size: 12px; font-weight: 700; cursor: pointer; white-space: nowrap; flex-shrink: 0; }
+.meal-tab.active { background: var(--accent-dim); border-color: var(--accent); color: var(--accent); }
+
+/* Camera button */
+.camera-btn {
+  width: 100%; padding: 28px; border-radius: var(--radius);
+  background: var(--card); border: 2px dashed var(--card-border);
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  cursor: pointer; color: var(--text-dim); font-size: 13px; font-weight: 600;
+  transition: border-color 0.2s;
+}
+.camera-btn:active { border-color: var(--accent); }
+.camera-icon { font-size: 36px; }
+#file-input { display: none; }
+
+/* Today summary */
+.today-header { display: flex; justify-content: space-between; align-items: center; margin: 24px 0 12px; }
+.today-label { font-size: 11px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.1em; }
+.today-total { font-size: 13px; font-weight: 800; color: var(--accent); }
+
+.macro-bar { display: flex; gap: 8px; margin-bottom: 16px; }
+.macro-pill { flex: 1; background: var(--card); border: 1px solid var(--card-border); border-radius: 10px; padding: 10px 8px; text-align: center; }
+.macro-val { font-size: 18px; font-weight: 800; }
+.macro-lbl { font-size: 9px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; margin-top: 2px; }
+.macro-cal { color: var(--orange); }
+.macro-pro { color: var(--accent); }
+.macro-carb { color: var(--yellow); }
+.macro-fat { color: #9b59b6; }
+
+/* Log entries */
+.log-entry { background: var(--card); border: 1px solid var(--card-border); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 8px; display: flex; gap: 12px; align-items: center; }
+.log-thumb { width: 44px; height: 44px; border-radius: 8px; object-fit: cover; flex-shrink: 0; background: var(--surface); display: flex; align-items: center; justify-content: center; font-size: 20px; }
+.log-info { flex: 1; min-width: 0; }
+.log-desc { font-size: 13px; font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.log-meta { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+.log-cal { font-size: 15px; font-weight: 800; color: var(--orange); flex-shrink: 0; }
+.log-delete { background: none; border: none; color: var(--text-muted); font-size: 16px; cursor: pointer; padding: 4px; }
+
+.empty-state { text-align: center; padding: 32px 0; color: var(--text-muted); font-size: 13px; }
+
+/* Preview screen */
+.preview-img-wrap { border-radius: var(--radius); overflow: hidden; margin-bottom: 16px; max-height: 320px; }
+#preview-img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.notes-input { width: 100%; background: var(--card); border: 1px solid var(--card-border); border-radius: var(--radius-sm); padding: 12px; color: var(--text); font-size: 14px; font-family: inherit; resize: none; margin-bottom: 16px; }
+.notes-input::placeholder { color: var(--text-muted); }
+.notes-input:focus { outline: none; border-color: var(--accent); }
+
+/* Action buttons */
+.btn { width: 100%; padding: 16px; border-radius: var(--radius-sm); font-size: 15px; font-weight: 800; cursor: pointer; border: none; margin-bottom: 10px; }
+.btn-primary { background: var(--accent); color: #fff; }
+.btn-primary:active { opacity: 0.9; }
+.btn-secondary { background: var(--card); color: var(--text); border: 1px solid var(--card-border); }
+.btn-green { background: var(--green); color: #fff; }
+.btn-disabled { opacity: 0.4; pointer-events: none; }
+
+/* Loading */
+.loading-wrap { text-align: center; padding: 48px 0; }
+.spinner { width: 36px; height: 36px; border: 3px solid var(--card-border); border-top-color: var(--accent); border-radius: 50%; animation: spin 0.8s linear infinite; margin: 0 auto 16px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.loading-txt { font-size: 13px; color: var(--text-dim); font-weight: 600; }
+
+/* Result screen */
+.result-card { background: var(--card); border: 1px solid var(--card-border); border-radius: var(--radius); padding: 16px; margin-bottom: 16px; }
+.result-desc { font-size: 15px; font-weight: 700; margin-bottom: 4px; }
+.result-confidence { font-size: 11px; font-weight: 700; padding: 2px 8px; border-radius: 5px; display: inline-block; margin-bottom: 12px; }
+.conf-high  { background: var(--green-dim); color: var(--green); }
+.conf-medium { background: rgba(241,196,15,0.15); color: var(--yellow); }
+.conf-low   { background: rgba(231,76,60,0.15); color: var(--red); }
+.result-notes { font-size: 11px; color: var(--text-dim); margin-top: 10px; line-height: 1.5; }
+
+.edit-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 16px; }
+.edit-field label { font-size: 10px; font-weight: 700; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.08em; display: block; margin-bottom: 5px; }
+.edit-field input { width: 100%; background: var(--card); border: 1px solid var(--card-border); border-radius: 8px; padding: 10px 12px; color: var(--text); font-size: 16px; font-weight: 700; font-family: inherit; }
+.edit-field input:focus { outline: none; border-color: var(--accent); }
+.edit-field.full { grid-column: 1 / -1; }
+</style>
+</head>
+<body>
+
+<!-- ==================== LOG SCREEN ==================== -->
+<div id="screen-log" class="screen active">
+  <div class="page-header">
+    <button class="back-btn" onclick="window.location.href='index.html'">←</button>
+    <div>
+      <div class="page-title">Food Log</div>
+      <div class="page-date" id="log-date"></div>
+    </div>
+  </div>
+
+  <div class="meal-tabs" id="meal-tabs">
+    <div class="meal-tab active" onclick="selectMeal('breakfast')">🌅 Breakfast</div>
+    <div class="meal-tab" onclick="selectMeal('lunch')">☀️ Lunch</div>
+    <div class="meal-tab" onclick="selectMeal('dinner')">🌙 Dinner</div>
+    <div class="meal-tab" onclick="selectMeal('snack')">🍎 Snack</div>
+    <div class="meal-tab" onclick="selectMeal('drink')">☕ Drink</div>
+  </div>
+
+  <label class="camera-btn" for="file-input">
+    <div class="camera-icon">📷</div>
+    <div>Take a photo or choose from library</div>
+    <div style="font-size:11px;color:var(--text-muted);font-weight:400">AI will estimate calories & macros</div>
+  </label>
+  <input type="file" id="file-input" accept="image/*" capture="environment" onchange="onPhotoSelected(this)">
+
+  <div class="today-header">
+    <div class="today-label">Today's Log</div>
+    <div class="today-total" id="today-total">— kcal</div>
+  </div>
+
+  <div class="macro-bar">
+    <div class="macro-pill"><div class="macro-val macro-cal" id="sum-cal">—</div><div class="macro-lbl">Kcal</div></div>
+    <div class="macro-pill"><div class="macro-val macro-pro" id="sum-pro">—</div><div class="macro-lbl">Protein</div></div>
+    <div class="macro-pill"><div class="macro-val macro-carb" id="sum-carb">—</div><div class="macro-lbl">Carbs</div></div>
+    <div class="macro-pill"><div class="macro-val macro-fat" id="sum-fat">—</div><div class="macro-lbl">Fat</div></div>
+  </div>
+
+  <div id="log-list"></div>
+</div>
+
+<!-- ==================== PREVIEW SCREEN ==================== -->
+<div id="screen-preview" class="screen">
+  <div class="page-header">
+    <button class="back-btn" onclick="showScreen('log')">←</button>
+    <div>
+      <div class="page-title">Analyze Food</div>
+      <div class="page-date" id="preview-meal-label"></div>
+    </div>
+  </div>
+
+  <div class="preview-img-wrap">
+    <img id="preview-img" src="" alt="Food photo">
+  </div>
+
+  <textarea id="notes-input" class="notes-input" rows="2"
+    placeholder="Optional notes — e.g. 'large portion', 'oat milk latte', 'half plate'"></textarea>
+
+  <button class="btn btn-primary" onclick="analyzeFood()">ANALYZE WITH AI</button>
+  <button class="btn btn-secondary" onclick="showScreen('log')">Cancel</button>
+</div>
+
+<!-- ==================== LOADING SCREEN ==================== -->
+<div id="screen-loading" class="screen">
+  <div class="loading-wrap" style="padding-top: 120px">
+    <div class="spinner"></div>
+    <div class="loading-txt">Analyzing your food…</div>
+  </div>
+</div>
+
+<!-- ==================== RESULT SCREEN ==================== -->
+<div id="screen-result" class="screen">
+  <div class="page-header">
+    <button class="back-btn" onclick="showScreen('preview')">←</button>
+    <div>
+      <div class="page-title">Review & Save</div>
+      <div class="page-date">Adjust any values below</div>
+    </div>
+  </div>
+
+  <div class="preview-img-wrap" style="max-height:180px">
+    <img id="result-img" src="" alt="">
+  </div>
+
+  <div class="result-card">
+    <div class="result-desc" id="result-desc"></div>
+    <span class="result-confidence" id="result-confidence"></span>
+    <div class="result-notes" id="result-notes"></div>
+  </div>
+
+  <div class="edit-grid">
+    <div class="edit-field full">
+      <label>Description</label>
+      <input type="text" id="edit-desc" placeholder="What did you eat?">
+    </div>
+    <div class="edit-field">
+      <label>Calories (kcal)</label>
+      <input type="number" id="edit-cal" inputmode="numeric">
+    </div>
+    <div class="edit-field">
+      <label>Protein (g)</label>
+      <input type="number" id="edit-pro" inputmode="decimal">
+    </div>
+    <div class="edit-field">
+      <label>Carbs (g)</label>
+      <input type="number" id="edit-carb" inputmode="decimal">
+    </div>
+    <div class="edit-field">
+      <label>Fat (g)</label>
+      <input type="number" id="edit-fat" inputmode="decimal">
+    </div>
+  </div>
+
+  <button class="btn btn-green" onclick="saveEntry()">SAVE TO LOG</button>
+  <button class="btn btn-secondary" onclick="showScreen('log')">Discard</button>
+</div>
+
+<script>
+// ── Config ───────────────────────────────────────────────────
+const SB_URL = 'https://wnwkraukvizulycjssyk.supabase.co/rest/v1';
+const SB_KEY = 'sb_publishable__XnF9a593J_CgLzof3k-Mw_AA-jKpl6';
+const MEAL_EMOJIS = { breakfast:'🌅', lunch:'☀️', dinner:'🌙', snack:'🍎', drink:'☕' };
+
+function sbHeaders(extra = {}) {
+  return Object.assign({
+    'apikey': SB_KEY, 'Authorization': 'Bearer ' + SB_KEY,
+    'Content-Type': 'application/json',
+  }, extra);
+}
+
+// ── State ────────────────────────────────────────────────────
+let state = {
+  meal:      'breakfast',
+  imageB64:  null,
+  mimeType:  'image/jpeg',
+  imageUrl:  null, // object URL for display
+  result:    null,
+  todayLogs: [],
+};
+
+// ── Init ─────────────────────────────────────────────────────
+document.addEventListener('DOMContentLoaded', () => {
+  const d = new Date();
+  const label = d.toLocaleDateString('en-US', { weekday:'long', month:'short', day:'numeric' });
+  document.getElementById('log-date').textContent = label;
+  loadTodayLogs();
+});
+
+// ── Navigation ───────────────────────────────────────────────
+function showScreen(id) {
+  document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+  document.getElementById('screen-' + id).classList.add('active');
+  window.scrollTo(0, 0);
+}
+
+// ── Meal type ────────────────────────────────────────────────
+function selectMeal(meal) {
+  state.meal = meal;
+  document.querySelectorAll('.meal-tab').forEach((t, i) => {
+    const meals = ['breakfast','lunch','dinner','snack','drink'];
+    t.classList.toggle('active', meals[i] === meal);
+  });
+}
+
+// ── Photo selection ──────────────────────────────────────────
+function onPhotoSelected(input) {
+  const file = input.files[0];
+  if (!file) return;
+  resizeImage(file, 1024).then(({ base64, mimeType }) => {
+    state.imageB64  = base64;
+    state.mimeType  = mimeType;
+    state.imageUrl  = URL.createObjectURL(file);
+    document.getElementById('preview-img').src = state.imageUrl;
+    document.getElementById('result-img').src  = state.imageUrl;
+    document.getElementById('preview-meal-label').textContent =
+      (MEAL_EMOJIS[state.meal] || '') + ' ' + state.meal.charAt(0).toUpperCase() + state.meal.slice(1);
+    document.getElementById('notes-input').value = '';
+    showScreen('preview');
+  });
+  input.value = ''; // allow re-selecting same file
+}
+
+function resizeImage(file, maxPx) {
+  return new Promise(resolve => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      const scale = Math.min(1, maxPx / Math.max(img.width, img.height));
+      const canvas = document.createElement('canvas');
+      canvas.width  = Math.round(img.width  * scale);
+      canvas.height = Math.round(img.height * scale);
+      canvas.getContext('2d').drawImage(img, 0, 0, canvas.width, canvas.height);
+      URL.revokeObjectURL(url);
+      resolve({ base64: canvas.toDataURL('image/jpeg', 0.85).split(',')[1], mimeType: 'image/jpeg' });
+    };
+    img.src = url;
+  });
+}
+
+// ── AI Analysis ──────────────────────────────────────────────
+async function analyzeFood() {
+  const notes = document.getElementById('notes-input').value.trim();
+  showScreen('loading');
+
+  try {
+    const res = await fetch('/api/analyze-food', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ image: state.imageB64, mimeType: state.mimeType, context: notes }),
+    });
+
+    if (!res.ok) throw new Error('API error ' + res.status);
+    const data = await res.json();
+    state.result = data;
+    renderResult(data);
+    showScreen('result');
+  } catch (e) {
+    console.error('Analysis error:', e);
+    alert('Analysis failed — check your connection and try again.');
+    showScreen('preview');
+  }
+}
+
+function renderResult(data) {
+  document.getElementById('result-desc').textContent       = data.description || 'Unknown food';
+  document.getElementById('result-notes').textContent      = data.notes || '';
+  document.getElementById('edit-desc').value  = data.description || '';
+  document.getElementById('edit-cal').value   = data.calories  || 0;
+  document.getElementById('edit-pro').value   = data.protein_g || 0;
+  document.getElementById('edit-carb').value  = data.carbs_g   || 0;
+  document.getElementById('edit-fat').value   = data.fat_g     || 0;
+
+  const confEl = document.getElementById('result-confidence');
+  const conf = data.confidence || 'medium';
+  confEl.textContent  = conf.toUpperCase() + ' CONFIDENCE';
+  confEl.className    = 'result-confidence conf-' + conf;
+}
+
+// ── Save ─────────────────────────────────────────────────────
+async function saveEntry() {
+  const row = {
+    date_local:   new Date().toLocaleDateString('en-CA'),
+    meal_type:    state.meal,
+    description:  document.getElementById('edit-desc').value  || state.result?.description || '',
+    calories:     parseFloat(document.getElementById('edit-cal').value)  || 0,
+    protein_g:    parseFloat(document.getElementById('edit-pro').value)  || 0,
+    carbs_g:      parseFloat(document.getElementById('edit-carb').value) || 0,
+    fat_g:        parseFloat(document.getElementById('edit-fat').value)  || 0,
+  };
+
+  try {
+    const res = await fetch(`${SB_URL}/food_logs`, {
+      method: 'POST',
+      headers: sbHeaders({ 'Prefer': 'return=representation' }),
+      body: JSON.stringify(row),
+    });
+    if (!res.ok) throw new Error(await res.text());
+    const [saved] = await res.json();
+    state.todayLogs.unshift(saved);
+    renderTodayLog();
+    showScreen('log');
+  } catch (e) {
+    console.error('Save error:', e);
+    alert('Failed to save — check your Supabase food_logs table exists.');
+  }
+}
+
+// ── Today's log ──────────────────────────────────────────────
+async function loadTodayLogs() {
+  const today = new Date().toLocaleDateString('en-CA');
+  try {
+    const res = await fetch(
+      `${SB_URL}/food_logs?date_local=eq.${today}&order=created_at.desc`,
+      { headers: sbHeaders() }
+    );
+    if (res.ok) {
+      state.todayLogs = await res.json();
+      renderTodayLog();
+    }
+  } catch (e) { console.error('Load logs error:', e); }
+}
+
+function renderTodayLog() {
+  const logs = state.todayLogs;
+  const totalCal  = logs.reduce((s, r) => s + (r.calories  || 0), 0);
+  const totalPro  = logs.reduce((s, r) => s + (r.protein_g || 0), 0);
+  const totalCarb = logs.reduce((s, r) => s + (r.carbs_g   || 0), 0);
+  const totalFat  = logs.reduce((s, r) => s + (r.fat_g     || 0), 0);
+
+  document.getElementById('today-total').textContent = totalCal ? `${Math.round(totalCal)} kcal` : '— kcal';
+  document.getElementById('sum-cal').textContent  = totalCal  ? Math.round(totalCal)  : '—';
+  document.getElementById('sum-pro').textContent  = totalPro  ? Math.round(totalPro)  + 'g' : '—';
+  document.getElementById('sum-carb').textContent = totalCarb ? Math.round(totalCarb) + 'g' : '—';
+  document.getElementById('sum-fat').textContent  = totalFat  ? Math.round(totalFat)  + 'g' : '—';
+
+  const list = document.getElementById('log-list');
+  if (!logs.length) {
+    list.innerHTML = '<div class="empty-state">No food logged today yet.<br>Tap the camera to add your first entry.</div>';
+    return;
+  }
+  list.innerHTML = logs.map(r => `
+    <div class="log-entry">
+      <div class="log-thumb">${MEAL_EMOJIS[r.meal_type] || '🍽️'}</div>
+      <div class="log-info">
+        <div class="log-desc">${r.description}</div>
+        <div class="log-meta">${r.meal_type} · ${Math.round(r.protein_g || 0)}g protein · ${Math.round(r.carbs_g || 0)}g carbs · ${Math.round(r.fat_g || 0)}g fat</div>
+      </div>
+      <div style="display:flex;align-items:center;gap:6px">
+        <div class="log-cal">${Math.round(r.calories || 0)}</div>
+        <button class="log-delete" onclick="deleteEntry('${r.id}')">×</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function deleteEntry(id) {
+  if (!confirm('Remove this entry?')) return;
+  try {
+    await fetch(`${SB_URL}/food_logs?id=eq.${id}`, {
+      method: 'DELETE', headers: sbHeaders(),
+    });
+    state.todayLogs = state.todayLogs.filter(r => r.id !== id);
+    renderTodayLog();
+  } catch (e) { console.error('Delete error:', e); }
+}
+</script>
+</body>
+</html>
