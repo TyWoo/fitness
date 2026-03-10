@@ -797,18 +797,42 @@ function parseMinReps(repsStr) {
   return match ? parseInt(match[0]) : 8;
 }
 
-// Returns { weight, action, color } or null if no suggestion possible
+// Returns { weight, reps, action, color } or null if no suggestion possible
 function getSuggestion(ex, lastEx, readiness) {
-  const increment = getIncrement(ex);
-  if (increment === 0 || !lastEx?.sets?.length) return null;
+  if (!lastEx?.sets?.length || ex.isHold) return null;
 
-  const minTarget  = parseMinReps(ex.reps);
-  const totalSets  = lastEx.sets.length;
-  const hitTarget  = lastEx.sets.filter(s => (parseInt(s.reps) || 0) >= minTarget).length;
-  const completion = hitTarget / totalSets;
-  const lastWeight = lastEx.sets[lastEx.sets.length - 1]?.weight || 0;
+  const increment    = getIncrement(ex);
+  const isBW         = increment === 0;
+  const minTarget    = parseMinReps(ex.reps);
+  const totalSets    = lastEx.sets.length;
+  const hitTarget    = lastEx.sets.filter(s => (parseInt(s.reps) || 0) >= minTarget).length;
+  const completion   = hitTarget / totalSets;
   const lowReadiness = readiness < 70;
 
+  // BW exercises — suggest more reps instead of weight
+  if (isBW) {
+    const lastReps = lastEx.sets[lastEx.sets.length - 1]?.reps || minTarget;
+    const lastRepsNum = parseInt(lastReps) || minTarget;
+    let reps, action, color;
+
+    if (completion === 1 && !lowReadiness) {
+      reps   = lastRepsNum + 2;
+      action = `↑ +2 reps`;
+      color  = 'var(--green)';
+    } else if (completion >= 0.5) {
+      reps   = lastRepsNum;
+      action = `= hold`;
+      color  = 'var(--yellow)';
+    } else {
+      reps   = Math.max(lastRepsNum - 1, 1);
+      action = `↓ -1 rep`;
+      color  = 'var(--red)';
+    }
+    return { weight: null, reps, action, color };
+  }
+
+  // Weighted exercises — suggest weight progression
+  const lastWeight = lastEx.sets[lastEx.sets.length - 1]?.weight || 0;
   let weight, action, color;
 
   if (completion === 1 && !lowReadiness) {
@@ -825,7 +849,7 @@ function getSuggestion(ex, lastEx, readiness) {
     color  = 'var(--red)';
   }
 
-  return { weight, action, color };
+  return { weight, reps: null, action, color };
 }
 
 // ============================================================
@@ -1005,8 +1029,8 @@ function renderExerciseInner(ex, lastSession) {
     const key = `${ex.id}_${s}`;
     const prevSet = lastEx?.sets?.[s];
     const prevStr = prevSet ? `${prevSet.weight}×${prevSet.reps}` : '—';
-    const defaultWeight = suggestion ? suggestion.weight : (prevSet?.weight || ex.startWeight || '');
-    const defaultReps = prevSet?.reps || ex.reps.replace(/[^0-9]/g, '') || '';
+    const defaultWeight = (suggestion?.weight != null) ? suggestion.weight : (prevSet?.weight || ex.startWeight || '');
+    const defaultReps   = (suggestion?.reps   != null) ? suggestion.reps   : (prevSet?.reps || ex.reps.replace(/[^0-9]/g, '') || '');
     const isHold = ex.isHold;
 
     html += `
