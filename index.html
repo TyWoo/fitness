@@ -123,6 +123,16 @@ body {
   padding: 8px 14px; border-radius: 8px; font-size: 13px; font-weight: 600; cursor: pointer;
 }
 .wo-topbar-btn.finish { background: var(--green); border-color: var(--green); color: #fff; }
+.h10-pill {
+  display: flex; align-items: center; gap: 5px;
+  background: var(--card); border: 1px solid var(--card-border);
+  border-radius: 20px; padding: 5px 10px; font-size: 13px; font-weight: 700;
+  cursor: pointer; transition: all 0.2s;
+}
+.h10-pill.connected { border-color: var(--red); background: var(--red-dim); color: var(--red); }
+.h10-pill .h10-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--text-muted); }
+.h10-pill.connected .h10-dot { background: var(--red); animation: pulse 1s infinite; }
+@keyframes pulse { 0%,100% { opacity:1; } 50% { opacity:0.3; } }
 
 /* Exercise blocks */
 .exercise-block {
@@ -367,7 +377,13 @@ body {
 <div id="screen-workout" class="screen">
   <div class="wo-topbar">
     <button class="wo-topbar-btn" onclick="confirmEnd()">✕</button>
-    <div class="wo-topbar-timer" id="wo-timer">0:00</div>
+    <div style="display:flex;flex-direction:column;align-items:center;gap:4px">
+      <div class="wo-topbar-timer" id="wo-timer">0:00</div>
+      <div class="h10-pill" id="h10-pill" onclick="toggleH10()">
+        <div class="h10-dot"></div>
+        <span id="h10-label">H10</span>
+      </div>
+    </div>
     <button class="wo-topbar-btn finish" onclick="finishWorkout()">Finish</button>
   </div>
   <div id="exercise-list"></div>
@@ -650,6 +666,104 @@ let state = {
   emomState: null,
   amrapState: null,
 };
+
+// ============================================================
+// POLAR H10 — WEB BLUETOOTH
+// ============================================================
+let h10 = {
+  device: null,
+  char: null,
+  connected: false,
+  hrReadings: [],   // all HR values during workout
+  rrIntervals: [],  // RR intervals in ms
+};
+
+function calculateRMSSD(rrMs) {
+  if (rrMs.length < 2) return null;
+  const diffs = [];
+  for (let i = 1; i < rrMs.length; i++) diffs.push(rrMs[i] - rrMs[i - 1]);
+  return Math.round(Math.sqrt(diffs.reduce((s, d) => s + d * d, 0) / diffs.length));
+}
+
+function handleHrMeasurement(event) {
+  const v = event.target.value;
+  const flags = v.getUint8(0);
+  const hrFormat = flags & 0x1;
+  let hr, offset;
+  if (hrFormat === 0) { hr = v.getUint8(1); offset = 2; }
+  else                { hr = v.getUint16(1, true); offset = 3; }
+  h10.hrReadings.push(hr);
+  // RR intervals present (bit 4)
+  if (flags & 0x10) {
+    while (offset + 1 < v.byteLength) {
+      h10.rrIntervals.push(v.getUint16(offset, true) * 1000 / 1024); // → ms
+      offset += 2;
+    }
+  }
+  updateH10Pill(hr);
+}
+
+function updateH10Pill(hr) {
+  const pill  = document.getElementById('h10-pill');
+  const label = document.getElementById('h10-label');
+  if (!pill) return;
+  if (h10.connected) {
+    pill.className = 'h10-pill connected';
+    label.textContent = hr ? `${hr} bpm` : 'H10 ♥';
+  } else {
+    pill.className = 'h10-pill';
+    label.textContent = 'H10';
+  }
+}
+
+async function connectH10() {
+  if (!navigator.bluetooth) {
+    alert('Web Bluetooth is not supported on this browser. Use Chrome or Edge on Android/desktop.');
+    return;
+  }
+  try {
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{ namePrefix: 'Polar' }],
+      optionalServices: ['heart_rate'],
+    });
+    h10.device = device;
+    device.addEventListener('gattserverdisconnected', disconnectH10);
+    const server  = await device.gatt.connect();
+    const service = await server.getPrimaryService('heart_rate');
+    h10.char      = await service.getCharacteristic('heart_rate_measurement');
+    h10.char.addEventListener('characteristicvaluechanged', handleHrMeasurement);
+    await h10.char.startNotifications();
+    h10.connected = true;
+    updateH10Pill(null);
+  } catch (e) {
+    if (e.name !== 'NotFoundError') console.error('H10 connect error:', e);
+  }
+}
+
+function disconnectH10() {
+  h10.connected = false;
+  if (h10.device?.gatt?.connected) h10.device.gatt.disconnect();
+  updateH10Pill(null);
+}
+
+function toggleH10() {
+  if (h10.connected) disconnectH10();
+  else connectH10();
+}
+
+function getH10SessionData() {
+  if (h10.hrReadings.length === 0) return null;
+  return {
+    avg_hr:    Math.round(h10.hrReadings.reduce((a, b) => a + b, 0) / h10.hrReadings.length),
+    max_hr:    Math.max(...h10.hrReadings),
+    hrv_rmssd: calculateRMSSD(h10.rrIntervals),
+  };
+}
+
+function resetH10Session() {
+  h10.hrReadings  = [];
+  h10.rrIntervals = [];
+}
 
 // ============================================================
 // LOCAL STORAGE
@@ -1108,7 +1222,8 @@ function confirmEnd() {
 function finishWorkout() {
   const tmpl = state.activeTemplate;
   const duration = Math.floor((Date.now() - state.startTime) / 1000);
-  const session = buildSessionData(tmpl, duration);
+  const h10Data = getH10SessionData();
+  const session = buildSessionData(tmpl, duration, h10Data);
 
   // Save to localStorage
   const history = getHistory();
@@ -1123,9 +1238,31 @@ function finishWorkout() {
 
   // Push to Supabase
   syncSessionToSupabase(session);
+
+  // Save H10 data to cardio_sessions
+  if (h10Data) saveH10CardioSession(session, h10Data);
+
+  resetH10Session();
 }
 
-function buildSessionData(tmpl, duration) {
+function saveH10CardioSession(session, h10Data) {
+  const row = {
+    date_local:   session.dateLocal,
+    source:       'polar',
+    session_name: session.templateName,
+    duration_min: Math.round(session.duration / 60),
+    avg_hr:       h10Data.avg_hr,
+    max_hr:       h10Data.max_hr,
+    hrv_rmssd:    h10Data.hrv_rmssd,
+  };
+  fetch(`${SB_URL}/cardio_sessions`, {
+    method: 'POST',
+    headers: sbHeaders({ 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
+    body: JSON.stringify(row),
+  }).catch(e => console.error('H10 cardio save error:', e));
+}
+
+function buildSessionData(tmpl, duration, h10Data) {
   const exercises = [];
   tmpl.exercises.forEach(ex => {
     const adjustedSets = state.readiness < 70 && state.readiness >= 55 ? Math.max(ex.sets - 1, 1) : ex.sets;
@@ -1153,6 +1290,7 @@ function buildSessionData(tmpl, duration) {
     emom: state.emomState ? { completed: state.emomState.remaining <= 0 } : null,
     amrap: state.amrapState ? { rounds: state.amrapState.rounds, duration: 300 } : null,
     totalSetsLogged: Object.values(state.setData).filter(s => s.logged).length,
+    h10: h10Data || null,
   };
 }
 

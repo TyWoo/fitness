@@ -722,6 +722,71 @@
         </div>`;
     }
 
+    // ── POLAR ACCESSLINK ─────────────────────────────────────────
+    const POLAR_AUTH_URL = 'https://flow.polar.com/oauth2/authorization';
+    const POLAR_CLIENT_ID = 'YOUR_POLAR_CLIENT_ID'; // ← set after Polar developer registration
+
+    function polarConnect() {
+      const redirectUri = encodeURIComponent(window.location.origin + '/api/polar-callback');
+      window.location.href = `${POLAR_AUTH_URL}?response_type=code&client_id=${POLAR_CLIENT_ID}&redirect_uri=${redirectUri}`;
+    }
+
+    async function polarFetch(token, userId) {
+      const headers = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
+      const base = 'https://www.polaraccesslink.com/v3';
+
+      // Create an exercise transaction to pull new exercises
+      const txRes = await fetch(`${base}/users/${userId}/exercise-transactions`, {
+        method: 'POST', headers,
+      });
+      if (txRes.status === 204) return { sessions: [] }; // no new data
+
+      const tx = await txRes.json();
+      const txId = tx['transaction-id'];
+
+      // List exercises in this transaction
+      const exRes = await fetch(`${base}/users/${userId}/exercise-transactions/${txId}`, { headers });
+      const exData = await exRes.json();
+      const exerciseUrls = (exData.exercises || []);
+
+      const sessions = [];
+      for (const url of exerciseUrls) {
+        const exDetailRes = await fetch(url, { headers });
+        const ex = await exDetailRes.json();
+
+        // Get HR summary
+        const hrRes = await fetch(`${url}/heart-rate`, { headers });
+        const hrData = hrRes.ok ? await hrRes.json() : null;
+
+        const dateLocal = (ex['start-time'] || '').slice(0, 10);
+        const durMin = ex.duration
+          ? Math.round(parseInt(ex.duration.replace(/[^0-9]/g, '')) / 60)
+          : null;
+
+        sessions.push({
+          date_local:   dateLocal,
+          source:       'polar',
+          session_name: ex['detailed-sport-info'] || ex['sport-info'] || 'Workout',
+          duration_min: durMin,
+          avg_hr:       hrData?.average || null,
+          max_hr:       hrData?.maximum || null,
+          hrv_rmssd:    null, // calculated via Web Bluetooth during workout
+        });
+      }
+
+      // Commit transaction
+      await fetch(`${base}/users/${userId}/exercise-transactions/${txId}`, {
+        method: 'DELETE', headers,
+      });
+
+      // Upsert to Supabase
+      if (sessions.length > 0) {
+        await sb.from('cardio_sessions').upsert(sessions, { onConflict: 'date_local,source' });
+      }
+
+      return { sessions };
+    }
+
     // ── GOOGLE FIT ───────────────────────────────────────────────
     function gfitConnect(callback) {
       if (typeof google === 'undefined') {
@@ -840,7 +905,7 @@
       return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2,'0')} /500m`;
     }
 
-    function CardioScreen({ sessions, cardioSessions, gfitToken, gfitData, gfitLoading, onConnectGfit, onSyncGfit }) {
+    function CardioScreen({ sessions, cardioSessions, gfitToken, gfitData, gfitLoading, onConnectGfit, onSyncGfit, polarToken, polarLoading, polarSynced, onConnectPolar, onSyncPolar }) {
       const logRows   = useMemo(() => rowingSessions(sessions), [sessions]);
       const polarData = useMemo(() => (cardioSessions || []).filter(s => s.source === 'polar'),      [cardioSessions]);
       const runData   = useMemo(() => (cardioSessions || []).filter(s => s.source === 'google_fit'), [cardioSessions]);
@@ -927,6 +992,33 @@
                 fontFamily:"'IBM Plex Mono', monospace", fontSize:'10px', letterSpacing:'0.08em',
                 cursor: gfitLoading ? 'default' : 'pointer',
               }}>${gfitLoading ? 'SYNCING…' : '↻ SYNC NOW'}</button>
+            `}
+          <//>
+
+          <${Section} label="POLAR FLOW SYNC" badge=${polarToken ? (polarLoading ? 'SYNCING…' : polarSynced ? 'SYNCED' : 'CONNECTED') : 'NOT CONNECTED'}>
+            ${!polarToken ? html`
+              <div class="card card-p" style=${{ textAlign:'center', padding:'20px' }}>
+                <div style=${{ fontSize:'11px', color:'#555', marginBottom:'16px', lineHeight:'1.6' }}>
+                  Pull completed workouts from Polar Flow — HR, duration, and sport type.
+                </div>
+                <button onClick=${onConnectPolar} style=${{
+                  background:'#d40000', color:'#fff', border:'none', borderRadius:'6px',
+                  padding:'10px 24px', fontFamily:"'IBM Plex Mono', monospace", fontSize:'11px',
+                  letterSpacing:'0.08em', cursor:'pointer', fontWeight:'600',
+                }}>CONNECT POLAR FLOW</button>
+              </div>
+            ` : html`
+              <div class="card card-p" style=${{ display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                <div style=${{ fontSize:'11px', color:'#888' }}>
+                  ${polarSynced ? `${polarData.length} session${polarData.length !== 1 ? 's' : ''} synced` : 'Ready to sync'}
+                </div>
+                <button onClick=${onSyncPolar} disabled=${polarLoading} style=${{
+                  background:'#1a1a1a', color: polarLoading ? '#555' : '#888',
+                  border:'1px solid #222', borderRadius:'6px', padding:'8px 16px',
+                  fontFamily:"'IBM Plex Mono', monospace", fontSize:'10px', letterSpacing:'0.08em',
+                  cursor: polarLoading ? 'default' : 'pointer',
+                }}>${polarLoading ? 'SYNCING…' : '↻ SYNC NOW'}</button>
+              </div>
             `}
           <//>
 
@@ -1110,6 +1202,10 @@
       const [gfitToken,     setGfitToken]     = useState(() => sessionStorage.getItem('gfit_token') || null);
       const [gfitData,      setGfitData]      = useState(null);
       const [gfitLoading,   setGfitLoading]   = useState(false);
+      const [polarToken,    setPolarToken]    = useState(() => sessionStorage.getItem('polar_token') || null);
+      const [polarUserId,   setPolarUserId]   = useState(() => sessionStorage.getItem('polar_user') || null);
+      const [polarLoading,  setPolarLoading]  = useState(false);
+      const [polarSynced,   setPolarSynced]   = useState(false);
 
       const reloadCardio = () =>
         sb.from('cardio_sessions').select('*').order('date_local', { ascending: false }).limit(200)
@@ -1135,10 +1231,42 @@
         });
       };
 
-      // Auto-sync if token already exists
+      // Auto-sync Google Fit if token already exists
       useEffect(() => {
         if (gfitToken) handleSync(gfitToken);
       }, []);
+
+      // Handle Polar OAuth redirect (token in URL hash)
+      useEffect(() => {
+        const hash = window.location.hash.slice(1);
+        if (!hash.includes('polar_token')) return;
+        const params = Object.fromEntries(new URLSearchParams(hash));
+        if (params.polar_token) {
+          sessionStorage.setItem('polar_token', params.polar_token);
+          sessionStorage.setItem('polar_user',  params.polar_user || '');
+          setPolarToken(params.polar_token);
+          setPolarUserId(params.polar_user || '');
+          window.history.replaceState(null, '', window.location.pathname);
+          // Auto-sync on connect
+          handlePolarSync(params.polar_token, params.polar_user);
+        }
+      }, []);
+
+      const handlePolarSync = async (token, userId) => {
+        const t = token || polarToken;
+        const u = userId || polarUserId;
+        if (!t || !u) return;
+        setPolarLoading(true);
+        try {
+          await polarFetch(t, u);
+          await reloadCardio();
+          setPolarSynced(true);
+        } catch (e) {
+          console.error('Polar sync error:', e);
+        } finally {
+          setPolarLoading(false);
+        }
+      };
 
       useEffect(() => {
         Promise.all([
@@ -1176,7 +1304,7 @@
           ${tab === 'overview' && html`<${OverviewScreen}  sessions=${sessions} />`}
           ${tab === 'strength' && html`<${StrengthScreen}  sessions=${sessions} />`}
           ${tab === 'body'     && html`<${BodyScreen}       measurements=${measurements} />`}
-          ${tab === 'cardio'   && html`<${CardioScreen}     sessions=${sessions} cardioSessions=${cardioSessions} gfitToken=${gfitToken} gfitData=${gfitData} gfitLoading=${gfitLoading} onConnectGfit=${handleConnect} onSyncGfit=${() => handleSync(gfitToken)} />`}
+          ${tab === 'cardio'   && html`<${CardioScreen}     sessions=${sessions} cardioSessions=${cardioSessions} gfitToken=${gfitToken} gfitData=${gfitData} gfitLoading=${gfitLoading} onConnectGfit=${handleConnect} onSyncGfit=${() => handleSync(gfitToken)} polarToken=${polarToken} polarLoading=${polarLoading} polarSynced=${polarSynced} onConnectPolar=${polarConnect} onSyncPolar=${() => handlePolarSync()} />`}
           ${tab === 'history'  && html`<${HistoryScreen}    sessions=${sessions} />`}
 
           <nav class="bottom-nav">
