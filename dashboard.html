@@ -146,6 +146,22 @@
     .load-val { font-family: 'Bebas Neue', cursive; font-size: 36px; }
     .load-label { font-size: 11px; margin-top: 2px; }
     .load-pending { text-align: right; font-size: 10px; color: #2a2a2a; line-height: 1.8; }
+
+    /* Measurement form */
+    .form-card { background: #141414; border: 1px solid #2a2a2a; border-radius: 3px; padding: 16px; margin-bottom: 16px; }
+    .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 14px; }
+    .form-field { display: flex; flex-direction: column; gap: 5px; }
+    .form-label { font-size: 10px; color: #555; letter-spacing: 0.08em; }
+    .form-input { background: #0f0f0f; border: 1px solid #222; border-radius: 3px; color: #e8e8e8; font-family: 'IBM Plex Mono', monospace; font-size: 14px; padding: 9px 10px; width: 100%; outline: none; -webkit-appearance: none; appearance: none; }
+    .form-input:focus { border-color: #e8501a; }
+    .form-input::placeholder { color: #2a2a2a; }
+    .form-input[type=date] { color-scheme: dark; }
+    .log-meas-btn { width: 100%; padding: 11px; background: transparent; border: 1px solid #2a2a2a; border-radius: 3px; color: #555; font-family: 'IBM Plex Mono', monospace; font-size: 11px; letter-spacing: 0.1em; cursor: pointer; margin-bottom: 16px; }
+    .log-meas-btn.open { border-color: #333; color: #e8501a; }
+    .save-meas-btn { width: 100%; padding: 12px; background: #e8501a; color: #fff; border: none; border-radius: 3px; font-family: 'IBM Plex Mono', monospace; font-size: 12px; letter-spacing: 0.1em; cursor: pointer; font-weight: 600; }
+    .save-meas-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+    .form-err { font-size: 10px; color: #f87171; margin-top: 8px; }
+    .form-section-label { font-size: 10px; color: #333; letter-spacing: 0.1em; text-transform: uppercase; margin-bottom: 10px; border-top: 1px solid #1a1a1a; padding-top: 12px; }
   </style>
 </head>
 <body>
@@ -604,8 +620,86 @@
         </div>`;
     }
 
+    // ── MEASUREMENT FORM ─────────────────────────────────────────
+    function MeasurementForm({ onSave }) {
+      const today = new Date().toISOString().slice(0, 10);
+      const [form, setForm] = useState({ date: today, weight:'', chest:'', waist:'', neck:'', left_arm:'', left_thigh:'', bf:'' });
+      const [saving, setSaving] = useState(false);
+      const [err, setErr] = useState(null);
+
+      function upd(k) { return e => setForm(f => ({ ...f, [k]: e.target.value })); }
+
+      async function save() {
+        const meas = {};
+        if (form.weight)     meas.weight     = parseFloat(form.weight);
+        if (form.chest)      meas.chest      = parseFloat(form.chest);
+        if (form.waist)      meas.waist      = parseFloat(form.waist);
+        if (form.neck)       meas.neck       = parseFloat(form.neck);
+        if (form.left_arm)   meas.left_arm   = parseFloat(form.left_arm);
+        if (form.left_thigh) meas.left_thigh = parseFloat(form.left_thigh);
+        if (!Object.keys(meas).length && !form.bf) { setErr('Enter at least one measurement'); return; }
+        setSaving(true); setErr(null);
+        const calc = {};
+        if (form.bf) {
+          calc.bf_percent = parseFloat(form.bf);
+          if (meas.weight) calc.lean_mass = parseFloat((meas.weight * (1 - calc.bf_percent / 100)).toFixed(1));
+        }
+        const row = { date: form.date, measurements: meas, ...(Object.keys(calc).length ? { calculated: calc } : {}) };
+        const { data, error } = await sb.from('body_measurements').insert(row).select().single();
+        setSaving(false);
+        if (error) { setErr(error.message); return; }
+        onSave(data);
+      }
+
+      return html`
+        <div class="form-card">
+          <div class="form-grid">
+            <div class="form-field" style=${{ gridColumn:'1/-1' }}>
+              <label class="form-label">DATE</label>
+              <input class="form-input" type="date" value=${form.date} onInput=${upd('date')} />
+            </div>
+            <div class="form-field">
+              <label class="form-label">WEIGHT (LBS)</label>
+              <input class="form-input" type="number" inputmode="decimal" placeholder="220" value=${form.weight} onInput=${upd('weight')} />
+            </div>
+            <div class="form-field">
+              <label class="form-label">BODY FAT %</label>
+              <input class="form-input" type="number" inputmode="decimal" placeholder="—" value=${form.bf} onInput=${upd('bf')} />
+            </div>
+          </div>
+          <div class="form-section-label">CIRCUMFERENCE (INCHES)</div>
+          <div class="form-grid">
+            <div class="form-field">
+              <label class="form-label">CHEST</label>
+              <input class="form-input" type="number" inputmode="decimal" placeholder="41" value=${form.chest} onInput=${upd('chest')} />
+            </div>
+            <div class="form-field">
+              <label class="form-label">WAIST</label>
+              <input class="form-input" type="number" inputmode="decimal" placeholder="38" value=${form.waist} onInput=${upd('waist')} />
+            </div>
+            <div class="form-field">
+              <label class="form-label">NECK</label>
+              <input class="form-input" type="number" inputmode="decimal" placeholder="16" value=${form.neck} onInput=${upd('neck')} />
+            </div>
+            <div class="form-field">
+              <label class="form-label">L ARM</label>
+              <input class="form-input" type="number" inputmode="decimal" placeholder="—" value=${form.left_arm} onInput=${upd('left_arm')} />
+            </div>
+            <div class="form-field">
+              <label class="form-label">L THIGH</label>
+              <input class="form-input" type="number" inputmode="decimal" placeholder="—" value=${form.left_thigh} onInput=${upd('left_thigh')} />
+            </div>
+          </div>
+          ${err && html`<div class="form-err">${err}</div>`}
+          <button class="save-meas-btn" onClick=${save} disabled=${saving}>
+            ${saving ? 'SAVING...' : 'SAVE MEASUREMENT'}
+          </button>
+        </div>`;
+    }
+
     // ── BODY ─────────────────────────────────────────────────────
-    function BodyScreen({ measurements }) {
+    function BodyScreen({ measurements, onAdd }) {
+      const [showForm, setShowForm] = useState(false);
       const sorted = useMemo(() => measurements.slice().sort((a, b) => new Date(a.date) - new Date(b.date)), [measurements]);
       const latest = sorted[sorted.length - 1];
       const lm = (latest && latest.measurements) || {};
@@ -657,6 +751,10 @@
 
       if (!measurements.length) return html`
         <div class="screen">
+          <button class="log-meas-btn ${showForm ? 'open' : ''}" onClick=${() => setShowForm(f => !f)}>
+            ${showForm ? '✕  CANCEL' : '+ LOG MEASUREMENT'}
+          </button>
+          ${showForm && html`<${MeasurementForm} onSave=${m => { onAdd(m); setShowForm(false); }} />`}
           <${Section} label="BODY COMPOSITION">
             <div class="card card-p"><${EmptyState} msg="No measurements logged yet" /></div>
           <//>
@@ -665,6 +763,10 @@
 
       return html`
         <div class="screen">
+          <button class="log-meas-btn ${showForm ? 'open' : ''}" onClick=${() => setShowForm(f => !f)}>
+            ${showForm ? '✕  CANCEL' : '+ LOG MEASUREMENT'}
+          </button>
+          ${showForm && html`<${MeasurementForm} onSave=${m => { onAdd(m); setShowForm(false); }} />`}
           <${Section} label="CURRENT COMPOSITION">
             <div style=${{ display:'grid', gridTemplateColumns:'repeat(3,1fr)', gap:'8px' }}>
               <${StatCard} label="WEIGHT" val=${lm.weight != null ? lm.weight : '—'}
@@ -1304,7 +1406,7 @@
 
           ${tab === 'overview' && html`<${OverviewScreen}  sessions=${sessions} />`}
           ${tab === 'strength' && html`<${StrengthScreen}  sessions=${sessions} />`}
-          ${tab === 'body'     && html`<${BodyScreen}       measurements=${measurements} />`}
+          ${tab === 'body'     && html`<${BodyScreen}       measurements=${measurements} onAdd=${m => setMeasurements(prev => [m, ...prev])} />`}
           ${tab === 'cardio'   && html`<${CardioScreen}     sessions=${sessions} cardioSessions=${cardioSessions} gfitToken=${gfitToken} gfitData=${gfitData} gfitLoading=${gfitLoading} onConnectGfit=${handleConnect} onSyncGfit=${() => handleSync(gfitToken)} polarToken=${polarToken} polarLoading=${polarLoading} polarSynced=${polarSynced} onConnectPolar=${polarConnect} onSyncPolar=${() => handlePolarSync()} />`}
           ${tab === 'history'  && html`<${HistoryScreen}    sessions=${sessions} />`}
 
