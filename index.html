@@ -1546,6 +1546,20 @@ function getWeekNumber() {
   return Math.ceil(((now - start) / 86400000 + start.getDay() + 1) / 7);
 }
 
+function isCurrentWeekA() {
+  return getWeekNumber() % 2 === 1;
+}
+
+// Returns the effective exercise for the current week.
+// For exercises with weekA/weekB variants, merges the week's properties
+// over the base exercise (including id/name overrides for full swaps).
+// For exercises without variants, returns the exercise unchanged.
+function getEffectiveExercise(ex) {
+  const variant = isCurrentWeekA() ? ex.weekA : ex.weekB;
+  if (!variant) return ex;
+  return { ...ex, ...variant };
+}
+
 function downloadJSON(data, filename) {
   const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
   const a = document.createElement('a');
