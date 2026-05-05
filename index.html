@@ -75,6 +75,12 @@ body {
   font-size: 10px; font-weight: 700; color: var(--accent); background: var(--accent-dim);
   padding: 2px 8px; border-radius: 6px; margin-left: 8px;
 }
+.wc-week-badge {
+  font-size: 10px; font-weight: 800; letter-spacing: 0.5px;
+  padding: 2px 7px; border-radius: 5px; display: inline-block; margin-top: 3px;
+}
+.wc-week-badge.week-a { background: rgba(74,144,217,0.15); color: var(--accent); }
+.wc-week-badge.week-b { background: rgba(155,89,182,0.15); color: var(--purple); }
 
 .home-bottom { margin-top: 24px; display: flex; gap: 10px; }
 .home-btn {
@@ -362,6 +368,7 @@ body {
       <button class="back-btn" onclick="showScreen('home')">←</button>
       <div class="pw-title" id="pw-title" style="margin:0;flex:1;"></div>
     </div>
+    <div id="pw-week-label" style="text-align:center;font-size:13px;font-weight:700;margin-bottom:16px;padding:8px 16px;border-radius:8px;"></div>
     <div class="readiness-input">
       <div class="readiness-label">Oura Readiness Score (or estimate)</div>
       <div class="readiness-value" id="readiness-val">75</div>
@@ -893,6 +900,7 @@ function renderHome() {
         </div>
         <div class="wc-info">
           <div class="wc-title">${tmpl.name}${isToday ? '<span class="wc-today-badge">TODAY</span>' : ''}</div>
+          ${(!isRest && !tmpl.isLight) ? `<div class="wc-week-badge week-${isCurrentWeekA() ? 'a' : 'b'}">WEEK ${isCurrentWeekA() ? 'A' : 'B'}</div>` : ''}
           <div class="wc-desc">${tmpl.duration}${lastStr ? ' · ' + lastStr : ''}</div>
         </div>
         ${isRest ? '' : '<div class="wc-arrow">›</div>'}
@@ -932,6 +940,13 @@ function selectWorkout(templateId) {
   document.getElementById('pw-title').textContent = state.activeTemplate.name;
   updateReadiness(75);
   document.getElementById('readiness-slider').value = 75;
+  const weekLabel = document.getElementById('pw-week-label');
+  if (weekLabel) {
+    const isA = isCurrentWeekA();
+    weekLabel.textContent = isA ? 'Strength Week (A)' : 'Volume Week (B)';
+    weekLabel.style.background = isA ? 'rgba(74,144,217,0.12)' : 'rgba(155,89,182,0.12)';
+    weekLabel.style.color = isA ? 'var(--accent)' : 'var(--purple)';
+  }
   showScreen('pre');
 }
 
