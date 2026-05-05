@@ -389,7 +389,7 @@ body {
       <button class="back-btn" onclick="showScreen('home')">←</button>
       <div class="pw-title" id="pw-title" style="margin:0;flex:1;"></div>
     </div>
-    <div id="pw-week-label" style="text-align:center;font-size:13px;font-weight:700;margin-bottom:16px;padding:8px 16px;border-radius:8px;"></div>
+    <div id="pw-week-label" style="display:none;text-align:center;font-size:13px;font-weight:700;margin-bottom:16px;padding:8px 16px;border-radius:8px;"></div>
     <div class="readiness-input">
       <div class="readiness-label">Oura Readiness Score (or estimate)</div>
       <div class="readiness-value" id="readiness-val">75</div>
@@ -908,6 +908,7 @@ function renderHome() {
   const hour = new Date().getHours();
   const timeStr = hour < 12 ? 'Morning' : hour < 17 ? 'Afternoon' : 'Evening';
   greeting.textContent = `Good ${timeStr} — ${DAY_NAMES[today]}`;
+  const isWeekA = isCurrentWeekA();
 
   const container = document.getElementById('workout-cards');
   // Order: Mon(1), Tue(2), Wed(3), Thu(4), Fri(5), Sat(6), Sun(0)
@@ -930,7 +931,7 @@ function renderHome() {
         </div>
         <div class="wc-info">
           <div class="wc-title">${tmpl.name}${isToday ? '<span class="wc-today-badge">TODAY</span>' : ''}</div>
-          ${(!isRest && !tmpl.isLight) ? `<div class="wc-week-badge week-${isCurrentWeekA() ? 'a' : 'b'}">WEEK ${isCurrentWeekA() ? 'A' : 'B'}</div>` : ''}
+          ${(!isRest && !tmpl.isLight) ? `<div class="wc-week-badge week-${isWeekA ? 'a' : 'b'}">WEEK ${isWeekA ? 'A' : 'B'}</div>` : ''}
           <div class="wc-desc">${tmpl.duration}${lastStr ? ' · ' + lastStr : ''}</div>
         </div>
         ${isRest ? '' : '<div class="wc-arrow">›</div>'}
@@ -972,10 +973,16 @@ function selectWorkout(templateId) {
   document.getElementById('readiness-slider').value = 75;
   const weekLabel = document.getElementById('pw-week-label');
   if (weekLabel) {
-    const isA = isCurrentWeekA();
-    weekLabel.textContent = isA ? 'Strength Week (A)' : 'Volume Week (B)';
-    weekLabel.style.background = isA ? 'rgba(74,144,217,0.12)' : 'rgba(155,89,182,0.12)';
-    weekLabel.style.color = isA ? 'var(--accent)' : 'var(--purple)';
+    const tmpl = state.activeTemplate;
+    if (tmpl.isLight || tmpl.isRest) {
+      weekLabel.style.display = 'none';
+    } else {
+      weekLabel.style.display = '';
+      const isA = isCurrentWeekA();
+      weekLabel.textContent = isA ? 'Strength Week (A)' : 'Volume Week (B)';
+      weekLabel.style.background = isA ? 'rgba(74,144,217,0.12)' : 'rgba(155,89,182,0.12)';
+      weekLabel.style.color = isA ? 'var(--accent)' : 'var(--purple)';
+    }
   }
   showScreen('pre');
 }
@@ -1143,7 +1150,10 @@ function logSet(exId, setIdx, exerciseId, restTime) {
 
 function updateBadge(exId) {
   const tmpl = state.activeTemplate;
-  const ex = tmpl.exercises.find(e => e.id === exId);
+  const rawEx = tmpl.exercises.find(e => e.id === exId);
+  // For week-swapped exercises (e.g. front_squat -> leg_press), exId is the resolved id
+  // Fall back to finding by resolved id if raw lookup fails
+  const ex = rawEx ? getEffectiveExercise(rawEx) : tmpl.exercises.find(e => getEffectiveExercise(e).id === exId);
   if (!ex) return;
   const adjustedSets = state.readiness < 70 && state.readiness >= 55 ? Math.max(ex.sets - 1, 1) : ex.sets;
   let logged = 0;
@@ -1423,6 +1433,7 @@ function saveH10CardioSession(session, h10Data) {
 function buildSessionData(tmpl, duration, h10Data) {
   const exercises = [];
   tmpl.exercises.forEach(ex => {
+    ex = getEffectiveExercise(ex); // resolve week-appropriate id/name
     const adjustedSets = state.readiness < 70 && state.readiness >= 55 ? Math.max(ex.sets - 1, 1) : ex.sets;
     const sets = [];
     for (let s = 0; s < adjustedSets; s++) {
