@@ -1011,6 +1011,7 @@ function renderExercises() {
 }
 
 function renderExerciseInner(ex, lastSession) {
+  ex = getEffectiveExercise(ex);
   const lastEx = lastSession?.exercises?.find(e => e.id === ex.id);
   const adjustedSets = state.readiness < 70 && state.readiness >= 55 ? Math.max(ex.sets - 1, 1) : ex.sets;
   const suggestion = getSuggestion(ex, lastEx, state.readiness);
