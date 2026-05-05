@@ -504,7 +504,9 @@ const TEMPLATES = [
     duration: '~45 min',
     color: '#4a90d9',
     exercises: [
-      { id: 'bench', name: 'Barbell Bench Press', sets: 4, reps: '5', startWeight: 170, unit: 'lbs', rest: 150, notes: 'RPE 7-8. Add 5lbs when all sets hit.' },
+      { id: 'bench', name: 'Barbell Bench Press', sets: 4, reps: '5', startWeight: 165, unit: 'lbs', rest: 150, notes: 'RPE 7-8. Add 5lbs when all sets hit.',
+        weekA: { reps: '5', startWeight: 165, notes: 'Strength week. RPE 7-8.' },
+        weekB: { reps: '8', startWeight: 145, notes: 'Volume week. Controlled tempo, full ROM.' } },
       { id: 'db_ohp', name: 'DB Overhead Press', sets: 3, reps: '8-10', startWeight: 40, unit: 'lbs ea', rest: 90, notes: 'Standing, both arms together.' },
       { id: 'dips', name: 'Dips', sets: 3, reps: '8-12', startWeight: 0, unit: 'lbs added', rest: 0, superset: 'A', notes: 'Add weight when 12 is easy.' },
       { id: 'lat_raise', name: 'Lateral Raises (DB)', sets: 3, reps: '12-15', startWeight: 15, unit: 'lbs ea', rest: 60, superset: 'A', notes: 'Slow eccentric.' },
@@ -522,7 +524,9 @@ const TEMPLATES = [
     duration: '~45 min',
     color: '#e67e22',
     exercises: [
-      { id: 'squat', name: 'Back Squat', sets: 4, reps: '5', startWeight: 205, unit: 'lbs', rest: 180, notes: 'RPE 7-8. Breathe & brace.' },
+      { id: 'squat', name: 'Back Squat', sets: 4, reps: '5', startWeight: 215, unit: 'lbs', rest: 180, notes: 'RPE 7-8. Breathe & brace.',
+        weekA: { reps: '5', startWeight: 215, notes: 'Strength week. RPE 7-8. Breathe & brace.' },
+        weekB: { reps: '8', startWeight: 185, notes: 'Volume week. Depth focus, controlled descent.' } },
       { id: 'rdl', name: 'Romanian Deadlift', sets: 3, reps: '8', startWeight: 185, unit: 'lbs', rest: 120, notes: 'Hip hinge, slight knee bend.' },
       { id: 'box_jump', name: 'Box Jump', sets: 4, reps: '3', startWeight: 24, unit: 'in', rest: 90, notes: 'Step down. Full reset.', isPlyo: true },
       { id: 'bss', name: 'Bulgarian Split Squat', sets: 3, reps: '8 ea', startWeight: 30, unit: 'lbs ea', rest: 0, superset: 'A', notes: 'Rear foot on bench.' },
@@ -539,8 +543,10 @@ const TEMPLATES = [
     duration: '~45 min',
     color: '#2ecc71',
     exercises: [
-      { id: 'row', name: 'Barbell Rows', sets: 4, reps: '6-8', startWeight: 165, unit: 'lbs', rest: 150, notes: 'RPE 7-8. Chest to bar.' },
-      { id: 'pullup', name: 'Pull-ups', sets: 3, reps: '6-10', startWeight: 0, unit: 'BW', rest: 120, notes: 'BW at 220 is plenty. Add weight at 10.' },
+      { id: 'row', name: 'Barbell Rows', sets: 4, reps: '6', startWeight: 155, unit: 'lbs', rest: 150, notes: 'RPE 7-8. Chest to bar.',
+        weekA: { reps: '6', startWeight: 155, notes: 'Strength week. RPE 7-8. Chest to bar.' },
+        weekB: { reps: '10', startWeight: 135, notes: 'Volume week. Squeeze at top of each rep.' } },
+      { id: 'pullup', name: 'Pull-ups', sets: 3, reps: 'max', startWeight: 0, unit: 'BW', rest: 120, notes: 'Log every set. BW at 220 is plenty. Add weight when hitting 10+ consistently.' },
       { id: 'face_pull', name: 'Face Pull (36" rope)', sets: 3, reps: '15', startWeight: 20, unit: 'lbs', rest: 0, superset: 'A', notes: 'Slow, squeeze at top.' },
       { id: 'curl', name: 'Dumbbell Curls', sets: 3, reps: '10-12', startWeight: 30, unit: 'lbs ea', rest: 60, superset: 'A', notes: '' },
       { id: 'lat_pd', name: 'Lat Pulldowns', sets: 3, reps: '10-12', startWeight: 120, unit: 'lbs', rest: 60, notes: 'Wide grip.' },
@@ -593,7 +599,9 @@ const TEMPLATES = [
       { id: 'depth_drop', name: 'Depth Drops', sets: 3, reps: '5', startWeight: 20, unit: 'in box', rest: 90, isPlyo: true, notes: 'Stick landing, soft knees.' },
       { id: 'broad_jump', name: 'Broad Jumps', sets: 3, reps: '5', startWeight: 0, unit: 'BW', rest: 90, isPlyo: true, notes: 'Max distance, full reset.' },
       { id: 'sl_hop', name: 'Single-Leg Hops', sets: 3, reps: '5 ea', startWeight: 0, unit: 'BW', rest: 90, isPlyo: true, notes: 'Height focus.' },
-      { id: 'front_squat', name: 'Front Squat', sets: 4, reps: '8', startWeight: 145, unit: 'lbs', rest: 90, notes: 'Lighter than Tue. Depth focus.' },
+      { id: 'front_squat', name: 'Front Squat', sets: 4, reps: '8', startWeight: 145, unit: 'lbs', rest: 90, notes: 'Lighter than Tue. Depth focus.',
+        weekA: { reps: '8', startWeight: 145, notes: 'Depth focus. Elbows high.' },
+        weekB: { id: 'leg_press', name: 'Leg Press', reps: '12', startWeight: 180, unit: 'lbs', notes: 'Volume week. Full depth, 2s pause at bottom.' } },
       { id: 'kb_swing', name: 'Kettlebell Swings', sets: 4, reps: '15', startWeight: 53, unit: 'lbs', rest: 60, notes: 'Hip snap, not arms.' },
       { id: 'walk_lunge', name: 'Walking Lunges (DB)', sets: 3, reps: '10 ea', startWeight: 35, unit: 'lbs ea', rest: 0, superset: 'A', notes: '' },
       { id: 'calf_raise', name: 'Standing Calf Raise (BB)', sets: 4, reps: '12-15', startWeight: 135, unit: 'lbs', rest: 60, superset: 'A', notes: '2 sec pause at top.' },
@@ -1151,8 +1159,7 @@ function addRest(s) {
 // EMOM TIMER
 // ============================================================
 function renderEMOM(emom) {
-  const weekNum = getWeekNumber();
-  const isA = weekNum % 2 === 1;
+  const isA = isCurrentWeekA();
   const exercises = isA ? emom.weekA : emom.weekB;
   const label = isA ? 'A' : 'B';
 
@@ -1176,8 +1183,7 @@ function renderEMOM(emom) {
 
 function startEMOM() {
   const tmpl = state.activeTemplate;
-  const weekNum = getWeekNumber();
-  const isA = weekNum % 2 === 1;
+  const isA = isCurrentWeekA();
   const exercises = isA ? tmpl.emom.weekA : tmpl.emom.weekB;
 
   state.emomState = { totalSeconds: 480, remaining: 480, exercises, running: true };
