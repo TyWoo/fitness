@@ -209,7 +209,7 @@ body {
 .rest-bar.visible { transform: translateY(0); }
 
 /* Collapsed pill state */
-.rest-bar.collapsed { height: 52px; }
+.rest-bar.collapsed { height: calc(52px + var(--safe-bottom)); }
 .rest-bar:not(.collapsed) .rest-pill-collapsed { display: none; }
 .rest-bar.collapsed .rest-expanded { display: none; }
 
@@ -1175,10 +1175,10 @@ function startRestTimer(seconds) {
   state.restTarget = seconds;
   const bar = document.getElementById('rest-bar');
   bar.classList.add('visible', 'collapsed');
-  bar.classList.remove('expanded-manually');
+
   // Push workout screen up so pill doesn't cover last row
   const screen = document.getElementById('screen-workout');
-  if (screen) screen.style.paddingBottom = '172px'; // 120px base + 52px pill
+  if (screen) screen.style.paddingBottom = '172px'; // 120px scroll room + 52px pill bar
   updateRestDisplay();
 
   state.restTimer = setInterval(() => {
@@ -1221,7 +1221,7 @@ function updateRestDisplay() {
 function skipRest() {
   clearInterval(state.restTimer);
   const bar = document.getElementById('rest-bar');
-  bar.classList.remove('visible', 'collapsed', 'expanded-manually');
+  bar.classList.remove('visible', 'collapsed');
   const screen = document.getElementById('screen-workout');
   if (screen) screen.style.paddingBottom = '';
 }
