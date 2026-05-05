@@ -202,11 +202,32 @@ body {
 /* Rest timer bar */
 .rest-bar {
   position: fixed; bottom: 0; left: 0; right: 0; background: var(--surface);
-  border-top: 1px solid var(--card-border); padding: 16px; padding-bottom: calc(16px + var(--safe-bottom));
-  z-index: 60; transform: translateY(100%); transition: transform 0.3s ease;
-  display: flex; flex-direction: column; align-items: center; gap: 10px;
+  border-top: 1px solid var(--card-border); z-index: 60;
+  transform: translateY(100%); transition: transform 0.3s ease;
+  cursor: pointer; overflow: hidden;
 }
 .rest-bar.visible { transform: translateY(0); }
+
+/* Collapsed pill state */
+.rest-bar.collapsed { height: 52px; }
+.rest-bar:not(.collapsed) .rest-pill-collapsed { display: none; }
+.rest-bar.collapsed .rest-expanded { display: none; }
+
+.rest-pill-collapsed {
+  display: flex; align-items: center; gap: 12px;
+  padding: 0 20px; height: 52px;
+}
+.rest-pill-label { font-size: 13px; color: var(--text-dim); font-weight: 600; }
+.rest-time-pill {
+  font-size: 20px; font-weight: 800; font-variant-numeric: tabular-nums; flex: 1;
+}
+.rest-pill-hint { font-size: 11px; color: var(--text-muted); }
+
+/* Expanded state */
+.rest-expanded {
+  padding: 16px; padding-bottom: calc(16px + var(--safe-bottom));
+  display: flex; flex-direction: column; align-items: center; gap: 10px;
+}
 .rest-time { font-size: 52px; font-weight: 800; font-variant-numeric: tabular-nums; }
 .rest-time.warning { color: var(--orange); }
 .rest-time.done { color: var(--green); }
@@ -399,13 +420,22 @@ body {
 </div>
 
 <!-- ==================== REST TIMER ==================== -->
-<div class="rest-bar" id="rest-bar">
-  <div class="rest-label" id="rest-label">Rest</div>
-  <div class="rest-time" id="rest-time">0:00</div>
-  <div class="rest-progress"><div class="rest-progress-fill" id="rest-fill"></div></div>
-  <div class="rest-actions">
-    <button class="rest-btn skip" onclick="skipRest()">Skip</button>
-    <button class="rest-btn add" onclick="addRest(30)">+30s</button>
+<div class="rest-bar collapsed" id="rest-bar" onclick="toggleRestExpanded()">
+  <!-- Collapsed pill (default) -->
+  <div class="rest-pill-collapsed">
+    <span class="rest-pill-label">Rest</span>
+    <span class="rest-time-pill" id="rest-time-pill">0:00</span>
+    <span class="rest-pill-hint">tap to expand</span>
+  </div>
+  <!-- Expanded view -->
+  <div class="rest-expanded">
+    <div class="rest-label" id="rest-label">Rest</div>
+    <div class="rest-time" id="rest-time">0:00</div>
+    <div class="rest-progress"><div class="rest-progress-fill" id="rest-fill"></div></div>
+    <div class="rest-actions">
+      <button class="rest-btn skip" onclick="event.stopPropagation(); skipRest()">Skip</button>
+      <button class="rest-btn add" onclick="event.stopPropagation(); addRest(30)">+30s</button>
+    </div>
   </div>
 </div>
 
@@ -1134,7 +1164,11 @@ function startRestTimer(seconds) {
   state.restSeconds = seconds;
   state.restTarget = seconds;
   const bar = document.getElementById('rest-bar');
-  bar.classList.add('visible');
+  bar.classList.add('visible', 'collapsed');
+  bar.classList.remove('expanded-manually');
+  // Push workout screen up so pill doesn't cover last row
+  const screen = document.getElementById('screen-workout');
+  if (screen) screen.style.paddingBottom = '172px'; // 120px base + 52px pill
   updateRestDisplay();
 
   state.restTimer = setInterval(() => {
@@ -1148,22 +1182,43 @@ function startRestTimer(seconds) {
 }
 
 function updateRestDisplay() {
-  const el = document.getElementById('rest-time');
   const s = Math.abs(state.restSeconds);
   const m = Math.floor(s / 60);
   const sec = s % 60;
   const prefix = state.restSeconds < 0 ? '+' : '';
-  el.textContent = `${prefix}${m}:${sec.toString().padStart(2,'0')}`;
-  el.className = 'rest-time' + (state.restSeconds <= 0 ? ' done' : state.restSeconds <= 10 ? ' warning' : '');
+  const timeStr = `${prefix}${m}:${sec.toString().padStart(2,'0')}`;
+
+  const el = document.getElementById('rest-time');
+  if (el) {
+    el.textContent = timeStr;
+    el.className = 'rest-time' + (state.restSeconds <= 0 ? ' done' : state.restSeconds <= 10 ? ' warning' : '');
+  }
+
+  const pillEl = document.getElementById('rest-time-pill');
+  if (pillEl) {
+    pillEl.textContent = timeStr;
+    pillEl.style.color = state.restSeconds <= 0 ? 'var(--green)' : state.restSeconds <= 10 ? 'var(--orange)' : '';
+  }
 
   const pct = state.restTarget > 0 ? Math.max(0, (state.restSeconds / state.restTarget) * 100) : 0;
-  document.getElementById('rest-fill').style.width = pct + '%';
-  document.getElementById('rest-label').textContent = state.restSeconds <= 0 ? 'GO! Time\'s up' : 'Rest';
+  const fill = document.getElementById('rest-fill');
+  if (fill) fill.style.width = pct + '%';
+
+  const label = document.getElementById('rest-label');
+  if (label) label.textContent = state.restSeconds <= 0 ? 'GO! Time\'s up' : 'Rest';
 }
 
 function skipRest() {
   clearInterval(state.restTimer);
-  document.getElementById('rest-bar').classList.remove('visible');
+  const bar = document.getElementById('rest-bar');
+  bar.classList.remove('visible', 'collapsed', 'expanded-manually');
+  const screen = document.getElementById('screen-workout');
+  if (screen) screen.style.paddingBottom = '';
+}
+
+function toggleRestExpanded() {
+  const bar = document.getElementById('rest-bar');
+  bar.classList.toggle('collapsed');
 }
 
 function addRest(s) {
