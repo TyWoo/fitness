@@ -1658,6 +1658,13 @@ function downloadJSON(data, filename) {
   showToast('Downloaded!');
 }
 
+// Warn before leaving with an active workout
+window.addEventListener('beforeunload', (e) => {
+  if (state.activeTemplate && state.startTime) {
+    e.preventDefault();
+  }
+});
+
 // Init
 renderHome();
 </script>
