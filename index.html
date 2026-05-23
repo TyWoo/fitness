@@ -1557,12 +1557,41 @@ function exportAll() {
 }
 
 // ============================================================
+async function restoreFromCloud() {
+  showToast('Restoring from cloud…');
+  try {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/workout_sessions?select=*&order=created_at.desc&limit=300`, {
+      headers: { 'apikey': SUPABASE_KEY, 'Authorization': `Bearer ${SUPABASE_KEY}` }
+    });
+    if (!res.ok) throw new Error('Fetch failed');
+    const rows = await res.json();
+    const sessions = rows.map(r => ({
+      dateLocal:      r.date_local,
+      date:           r.date_iso,
+      templateId:     r.template_id,
+      templateName:   r.template_name,
+      duration:       r.duration_seconds,
+      readiness:      r.readiness,
+      exercises:      r.exercises || [],
+      emom:           r.emom || null,
+      amrap:          r.amrap || null,
+      totalSetsLogged: r.total_sets_logged || 0,
+    }));
+    saveHistory(sessions);
+    showToast(`Restored ${sessions.length} sessions`);
+    renderHistory();
+  } catch(e) {
+    showToast('Restore failed', true);
+    console.error(e);
+  }
+}
+
 // HISTORY
 // ============================================================
 function renderHistory() {
   const history = getHistory();
   const container = document.getElementById('history-list');
-  if (!history.length) { container.innerHTML = '<p style="color:var(--text-dim);text-align:center;padding:40px;">No workouts yet.</p>'; return; }
+  if (!history.length) { container.innerHTML = '<p style="color:var(--text-dim);text-align:center;padding:40px;">No workouts yet.</p><div style="text-align:center"><button class="start-btn" style="margin-top:8px;padding:12px 24px;font-size:14px" onclick="restoreFromCloud()">Restore from Cloud</button></div>'; return; }
 
   let html = '';
   history.forEach((s, idx) => {
