@@ -541,11 +541,11 @@ const TEMPLATES = [
     duration: '~45 min',
     color: '#4a90d9',
     exercises: [
-      { id: 'bench', name: 'Barbell Bench Press', sets: 4, reps: '5', startWeight: 165, unit: 'lbs', rest: 150, notes: 'RPE 7-8. Add 5lbs when all sets hit.',
-        weekA: { reps: '5', startWeight: 165, notes: 'Strength week. RPE 7-8.' },
-        weekB: { reps: '8', startWeight: 145, notes: 'Volume week. Controlled tempo, full ROM.' } },
-      { id: 'db_ohp', name: 'DB Overhead Press', sets: 3, reps: '8-10', startWeight: 40, unit: 'lbs ea', rest: 90, notes: 'Standing, both arms together.' },
-      { id: 'dips', name: 'Dips', sets: 3, reps: '8-12', startWeight: 0, unit: 'lbs added', rest: 0, superset: 'A', notes: 'Add weight when 12 is easy.' },
+      { id: 'incline_bench', name: 'Incline Barbell Press', sets: 4, reps: '5', startWeight: 145, unit: 'lbs', rest: 150, notes: 'RPE 7-8. 45° incline. Retract scapula.',
+        weekA: { reps: '5', startWeight: 145, notes: 'Strength week. RPE 7-8. Control the descent.' },
+        weekB: { reps: '8', startWeight: 125, notes: 'Volume week. Slow eccentric, full ROM.' } },
+      { id: 'arnold_press', name: 'Arnold Press', sets: 3, reps: '8-10', startWeight: 35, unit: 'lbs ea', rest: 90, notes: 'Seated. Rotate from palms-in to palms-out at top.' },
+      { id: 'skull_crusher', name: 'Skull Crushers (EZ Bar)', sets: 3, reps: '10-12', startWeight: 65, unit: 'lbs', rest: 0, superset: 'A', notes: 'Lower to forehead, full extension at top.' },
       { id: 'lat_raise', name: 'Lateral Raises (DB)', sets: 3, reps: '12-15', startWeight: 15, unit: 'lbs ea', rest: 60, superset: 'A', notes: 'Slow eccentric.' },
       { id: 'pushdown', name: 'Cable Tricep Pushdown', sets: 3, reps: '12-15', startWeight: 35, unit: 'lbs', rest: 60, notes: 'Squeeze at bottom.' },
       { id: 'hollow', name: 'Hollow Body Hold', sets: 3, reps: '30s', startWeight: 0, unit: 'BW', rest: 0, superset: 'B', isHold: true, notes: 'Arms overhead, legs extended.' },
@@ -568,7 +568,7 @@ const TEMPLATES = [
       { id: 'walk_lunge', name: 'Walking Lunges (DB)', sets: 3, reps: '10 ea', startWeight: 35, unit: 'lbs ea', rest: 0, superset: 'A', notes: '' },
       { id: 'bss', name: 'Bulgarian Split Squat', sets: 3, reps: '8 ea', startWeight: 30, unit: 'lbs ea', rest: 0, superset: 'A', notes: 'Rear foot on bench.' },
       { id: 'sl_calf', name: 'Single-Leg Calf Raise', sets: 3, reps: '15 ea', startWeight: 0, unit: 'BW', rest: 60, superset: 'A', notes: 'Elevated on 45lb plate. Full ROM.' },
-      { id: 'pistol', name: 'Pistol Squat Progression', sets: 3, reps: '5 ea', startWeight: 0, unit: 'BW', rest: 45, notes: 'Assisted with rack.' },
+      { id: 'step_up', name: 'Weighted Step-Ups (DB)', sets: 3, reps: '10 ea', startWeight: 25, unit: 'lbs ea', rest: 45, notes: 'Box height ~knee level. Full hip extension at top.' },
       { id: 'hip_switch', name: '90/90 Hip Switches', sets: 2, reps: '10', startWeight: 0, unit: 'BW', rest: 0, notes: 'Slow and controlled.' },
     ]
   },
@@ -580,13 +580,13 @@ const TEMPLATES = [
     duration: '~45 min',
     color: '#2ecc71',
     exercises: [
-      { id: 'row', name: 'Barbell Rows', sets: 4, reps: '6', startWeight: 155, unit: 'lbs', rest: 150, notes: 'RPE 7-8. Chest to bar.',
-        weekA: { reps: '6', startWeight: 155, notes: 'Strength week. RPE 7-8. Chest to bar.' },
-        weekB: { reps: '10', startWeight: 135, notes: 'Volume week. Squeeze at top of each rep.' } },
+      { id: 'cs_row', name: 'Chest-Supported DB Row', sets: 4, reps: '8', startWeight: 50, unit: 'lbs ea', rest: 150, notes: 'Chest on incline bench. Full ROM, squeeze at top.',
+        weekA: { reps: '8', startWeight: 50, notes: 'Strength week. Control the pull, no momentum.' },
+        weekB: { reps: '12', startWeight: 40, notes: 'Volume week. Slow eccentric, squeeze each rep.' } },
       { id: 'pullup', name: 'Pull-ups', sets: 3, reps: 'max', startWeight: 0, unit: 'BW', rest: 120, notes: 'Log every set. BW at 220 is plenty. Add weight when hitting 10+ consistently.' },
       { id: 'face_pull', name: 'Face Pull (36" rope)', sets: 3, reps: '15', startWeight: 20, unit: 'lbs', rest: 0, superset: 'A', notes: 'Slow, squeeze at top.' },
-      { id: 'curl', name: 'Dumbbell Curls', sets: 3, reps: '10-12', startWeight: 30, unit: 'lbs ea', rest: 60, superset: 'A', notes: '' },
-      { id: 'lat_pd', name: 'Lat Pulldowns', sets: 3, reps: '10-12', startWeight: 120, unit: 'lbs', rest: 60, notes: 'Wide grip.' },
+      { id: 'hammer_curl', name: 'Hammer Curls', sets: 3, reps: '10-12', startWeight: 30, unit: 'lbs ea', rest: 60, superset: 'A', notes: 'Neutral grip. Slow eccentric.' },
+      { id: 'cable_row', name: 'Close-Grip Cable Row', sets: 3, reps: '10-12', startWeight: 120, unit: 'lbs', rest: 60, notes: 'V-handle. Elbows tight, squeeze shoulder blades.' },
     ],
     emom: {
       duration: 480,
@@ -682,12 +682,12 @@ const TEMPLATES = [
     color: '#e74c3c',
     exercises: [
       { id: 'mk_squat', name: 'Back Squat', sets: 3, reps: '5', startWeight: 205, unit: 'lbs', rest: 0, superset: 'A', notes: 'RPE 7-8. Reduced to 3 sets — makeup day, not a PR day.' },
-      { id: 'mk_bench', name: 'Barbell Bench Press', sets: 3, reps: '5', startWeight: 170, unit: 'lbs', rest: 120, superset: 'A', notes: 'Fills squat rest. Chest recovers while legs worked.' },
+      { id: 'mk_incline_bench', name: 'Incline Barbell Press', sets: 3, reps: '5', startWeight: 145, unit: 'lbs', rest: 120, superset: 'A', notes: 'Fills squat rest. 45° incline.' },
       { id: 'mk_box', name: 'Box Jump', sets: 3, reps: '3', startWeight: 24, unit: 'in', rest: 90, isPlyo: true, notes: 'Step down. Full reset. Solo — CNS effort.' },
       { id: 'mk_rdl', name: 'Romanian Deadlift', sets: 3, reps: '8', startWeight: 185, unit: 'lbs', rest: 0, superset: 'B', notes: 'Hip hinge, slight knee bend.' },
-      { id: 'mk_ohp', name: 'DB Overhead Press', sets: 3, reps: '8-10', startWeight: 40, unit: 'lbs ea', rest: 90, superset: 'B', notes: 'Fills RDL rest — legs rest while shoulders work.' },
+      { id: 'mk_arnold', name: 'Arnold Press', sets: 3, reps: '8-10', startWeight: 35, unit: 'lbs ea', rest: 90, superset: 'B', notes: 'Fills RDL rest — legs rest while shoulders work.' },
       { id: 'mk_bss', name: 'Bulgarian Split Squat', sets: 3, reps: '8 ea', startWeight: 30, unit: 'lbs ea', rest: 0, superset: 'C', notes: 'Rear foot on bench.' },
-      { id: 'mk_dips', name: 'Dips', sets: 3, reps: '8-12', startWeight: 0, unit: 'lbs added', rest: 75, superset: 'C', notes: 'Fills BSS rest. Add weight when 12 is easy.' },
+      { id: 'mk_skull', name: 'Skull Crushers (EZ Bar)', sets: 3, reps: '10-12', startWeight: 65, unit: 'lbs', rest: 75, superset: 'C', notes: 'Fills BSS rest. Lower to forehead, full extension.' },
       { id: 'mk_hollow', name: 'Hollow Body Hold', sets: 3, reps: '30s', startWeight: 0, unit: 'BW', rest: 0, superset: 'D', isHold: true, notes: 'Arms overhead, legs extended.' },
       { id: 'mk_pallof', name: 'Pallof Press', sets: 3, reps: '10 ea', startWeight: 17, unit: 'lbs', rest: 0, superset: 'D', notes: 'Each side.' },
       { id: 'mk_abwheel', name: 'Ab Wheel Rollout', sets: 3, reps: '8-10', startWeight: 0, unit: 'BW', rest: 60, superset: 'D', notes: 'From knees. Completes core tri-set.' },
@@ -829,7 +829,7 @@ function getLastSession(templateId) {
 // SMART PROGRESSION
 // ============================================================
 const LOWER_BODY_IDS = new Set([
-  'squat','front_squat','bss','mk_squat','mk_bss','walk_lunge','pistol',
+  'squat','front_squat','bss','mk_squat','mk_bss','walk_lunge','step_up',
   'rdl','mk_rdl','nordic','hip_thrust','sl_calf','calf_raise',
   'depth_drop','broad_jump','sl_hop','box_jump','mk_box','kb_swing',
 ]);
