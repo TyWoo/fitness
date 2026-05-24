@@ -565,9 +565,9 @@ const TEMPLATES = [
         weekA: { reps: '5', startWeight: 215, notes: 'Strength week. RPE 7-8. Breathe & brace.' },
         weekB: { reps: '8', startWeight: 185, notes: 'Volume week. Depth focus, controlled descent.' } },
       { id: 'rdl', name: 'Romanian Deadlift', sets: 3, reps: '8', startWeight: 185, unit: 'lbs', rest: 120, notes: 'Hip hinge, slight knee bend.' },
-      { id: 'walk_lunge', name: 'Walking Lunges (DB)', sets: 3, reps: '10 ea', startWeight: 35, unit: 'lbs ea', rest: 0, superset: 'A', notes: '' },
-      { id: 'bss', name: 'Bulgarian Split Squat', sets: 3, reps: '8 ea', startWeight: 30, unit: 'lbs ea', rest: 0, superset: 'A', notes: 'Rear foot on bench.' },
-      { id: 'sl_calf', name: 'Single-Leg Calf Raise', sets: 3, reps: '15 ea', startWeight: 0, unit: 'BW', rest: 60, superset: 'A', notes: 'Elevated on 45lb plate. Full ROM.' },
+      { id: 'sl_rdl', name: 'Single-Leg RDL (DB)', sets: 3, reps: '10 ea', startWeight: 35, unit: 'lbs ea', rest: 0, superset: 'A', notes: 'Soft knee, hinge at hip. Control the descent.' },
+      { id: 'bss', name: 'Bulgarian Split Squat', sets: 3, reps: '8 ea', startWeight: 30, unit: 'lbs ea', rest: 60, superset: 'A', notes: 'Rear foot on bench.' },
+      { id: 'sl_calf', name: 'Single-Leg Calf Raise', sets: 3, reps: '15 ea', startWeight: 0, unit: 'BW', rest: 60, notes: 'Elevated on 45lb plate. Full ROM.' },
       { id: 'pistol', name: 'Pistol Squat Progression', sets: 3, reps: '5 ea', startWeight: 0, unit: 'BW', rest: 45, notes: 'Assisted with rack.' },
       { id: 'hip_switch', name: '90/90 Hip Switches', sets: 2, reps: '10', startWeight: 0, unit: 'BW', rest: 0, notes: 'Slow and controlled.' },
     ]
@@ -830,7 +830,7 @@ function getLastSession(templateId) {
 // ============================================================
 const LOWER_BODY_IDS = new Set([
   'squat','front_squat','bss','mk_squat','mk_bss','walk_lunge','pistol',
-  'rdl','mk_rdl','nordic','hip_thrust','sl_calf','calf_raise',
+  'rdl','mk_rdl','sl_rdl','nordic','hip_thrust','sl_calf','calf_raise',
   'depth_drop','broad_jump','sl_hop','box_jump','mk_box','kb_swing',
 ]);
 
