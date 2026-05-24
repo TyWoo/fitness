@@ -190,16 +190,18 @@
     // ── Mappings ─────────────────────────────────────────────────
     const MUSCLE_MAP = {
       squat:'Quads', front_squat:'Quads', bss:'Quads', mk_squat:'Quads',
-      mk_bss:'Quads', walk_lunge:'Quads', pistol:'Quads',
+      mk_bss:'Quads', walk_lunge:'Quads', pistol:'Quads', step_up:'Quads', goblet_squat:'Quads',
       rdl:'Hamstrings', mk_rdl:'Hamstrings', nordic:'Hamstrings',
       hip_thrust:'Glutes',
       sl_calf:'Calves', calf_raise:'Calves',
       depth_drop:'Plyos', broad_jump:'Plyos', sl_hop:'Plyos', box_jump:'Plyos', mk_box:'Plyos',
-      bench:'Chest', mk_bench:'Chest', dips:'Chest', mk_dips:'Chest',
-      ohp:'Shoulders', mk_ohp:'Shoulders', face_pull:'Shoulders', band_pull:'Shoulders',
-      row:'Back', pullup:'Back', lat_pd:'Back',
-      curl:'Biceps',
-      hollow:'Core', mk_hollow:'Core', pallof:'Core', mk_pallof:'Core', mk_abwheel:'Core',
+      bench:'Chest', mk_bench:'Chest', incline_bench:'Chest', mk_incline_bench:'Chest',
+      dips:'Triceps', mk_dips:'Triceps', skull_crusher:'Triceps', mk_skull:'Triceps', pushdown:'Triceps',
+      db_ohp:'Shoulders', ohp:'Shoulders', mk_ohp:'Shoulders', arnold_press:'Shoulders', mk_arnold:'Shoulders',
+      face_pull:'Shoulders', band_pull:'Shoulders', lat_raise:'Shoulders',
+      row:'Back', pullup:'Back', lat_pd:'Back', cs_row:'Back', cable_row:'Back',
+      curl:'Biceps', hammer_curl:'Biceps',
+      hollow:'Core', mk_hollow:'Core', pallof:'Core', mk_pallof:'Core', mk_abwheel:'Core', ab_wheel:'Core',
       kb_swing:'Conditioning',
       row_z2:'Cardio',
       foam:'Recovery', squat_hold:'Recovery', pigeon:'Recovery',
@@ -213,19 +215,19 @@
       Plyos:'#f39c12', Conditioning:'#e74c3c', Cardio:'#3498db', Recovery:'#2a2a2a',
     };
     const KEY_LIFTS = [
-      { id:'squat',  aliases:['squat','mk_squat'],   name:'Back Squat',      color:'#e8501a' },
-      { id:'bench',  aliases:['bench','mk_bench'],   name:'Bench Press',     color:'#4a90d9' },
-      { id:'rdl',    aliases:['rdl','mk_rdl'],       name:'Romanian DL',     color:'#e8a01a' },
-      { id:'ohp',    aliases:['ohp','mk_ohp'],       name:'Overhead Press',  color:'#9b59b6' },
-      { id:'row',    aliases:['row'],                 name:'Barbell Row',     color:'#27ae60' },
-      { id:'pullup', aliases:['pullup'],              name:'Pull-ups',        color:'#16a085' },
+      { id:'squat',         aliases:['squat','mk_squat'],                             name:'Back Squat',        color:'#e8501a' },
+      { id:'bench',         aliases:['bench','mk_bench','incline_bench','mk_incline_bench'], name:'Bench / Incline', color:'#4a90d9' },
+      { id:'rdl',           aliases:['rdl','mk_rdl'],                                 name:'Romanian DL',       color:'#e8a01a' },
+      { id:'arnold_press',  aliases:['db_ohp','ohp','mk_ohp','arnold_press','mk_arnold'], name:'OHP / Arnold',  color:'#9b59b6' },
+      { id:'row',           aliases:['row','cs_row'],                                 name:'Row',               color:'#27ae60' },
+      { id:'pullup',        aliases:['pullup'],                                       name:'Pull-ups',          color:'#16a085' },
     ];
     const TABS = [
-      { id:'overview', label:'OVERVIEW', icon:'⊞' },
-      { id:'strength', label:'STRENGTH', icon:'↑' },
-      { id:'body',     label:'BODY',     icon:'◎' },
-      { id:'cardio',   label:'CARDIO',   icon:'♡' },
-      { id:'history',  label:'HISTORY',  icon:'◷' },
+      { id:'overview',  label:'OVERVIEW',  icon:'⊞' },
+      { id:'strength',  label:'STRENGTH',  icon:'↑' },
+      { id:'progress',  label:'PROGRESS',  icon:'◈' },
+      { id:'body',      label:'BODY',      icon:'◎' },
+      { id:'history',   label:'HISTORY',   icon:'◷' },
     ];
 
     // ── Data utils ───────────────────────────────────────────────
@@ -1264,6 +1266,178 @@
         </div>`;
     }
 
+    // ── PROGRESS ─────────────────────────────────────────────────
+    function ExerciseProgress({ sessions, exercises, selected, onSelect }) {
+      const history = useMemo(() => {
+        if (!selected) return [];
+        const pts = [];
+        sessions.forEach(s => {
+          const ex = parseExs(s.exercises).find(e => e.id === selected);
+          if (!ex || !ex.sets.length) return;
+          const loggedSets = ex.sets;
+          const weights = loggedSets.map(st => parseFloat(st.weight) || 0);
+          const maxW = Math.max(...weights);
+          const totalReps = loggedSets.reduce((a, st) => a + (parseInt(st.reps) || 0), 0);
+          const avgReps = Math.round(totalReps / loggedSets.length * 10) / 10;
+          const bestSet = loggedSets.reduce((b, st) => {
+            const w = parseFloat(st.weight) || 0;
+            return w > b.w ? { w, r: st.reps } : b;
+          }, { w: 0, r: '' });
+          pts.push({ date: s.date_local, maxW, avgReps, sets: loggedSets.length, bestSet });
+        });
+        return pts.sort((a, b) => new Date(a.date) - new Date(b.date));
+      }, [sessions, selected]);
+
+      const isBW = history.length > 0 && history[0].maxW === 0;
+      const exName = exercises.find(e => e.id === selected)?.name || '';
+      const chartData = useMemo(() => {
+        if (!history.length) return null;
+        return {
+          labels: history.map(p => fmtDate(p.date)),
+          datasets: [{
+            data: isBW ? history.map(p => p.avgReps) : history.map(p => p.maxW),
+            borderColor: '#e8501a', backgroundColor: 'rgba(232,80,26,0.08)',
+            borderWidth: 2, tension: 0.3, pointRadius: 4,
+            pointBackgroundColor: '#e8501a', fill: true,
+          }],
+        };
+      }, [history, isBW]);
+
+      return html`
+        <div>
+          <div class="filter-row">
+            ${exercises.map(ex => html`
+              <button class=${'filter-chip' + (selected === ex.id ? ' active' : '')} key=${ex.id}
+                onClick=${() => onSelect(selected === ex.id ? null : ex.id)}>
+                ${ex.name.toUpperCase()}
+              </button>`)}
+          </div>
+          ${!selected ? html`<${EmptyState} msg="SELECT AN EXERCISE" />` : history.length === 0
+            ? html`<${EmptyState} msg="NO DATA FOR THIS EXERCISE" />`
+            : html`
+            <div>
+              <div class="section-label" style=${{ marginBottom:'12px' }}>
+                <span class="section-label-dot">▸</span>
+                ${exName.toUpperCase()} · ${history.length} SESSIONS
+              </div>
+              <div class="card card-p" style=${{ marginBottom:'12px' }}>
+                <${ChartCanvas} type="line" data=${chartData} height=${160}
+                  opts=${{ scales: { y: { ticks: { color:'#333', callback: v => isBW ? v + ' reps' : v + ' lbs' } } } }} />
+              </div>
+              <div class="card" style=${{ overflow:'hidden' }}>
+                ${history.slice().reverse().map((p, i) => html`
+                  <div key=${i} style=${{ padding:'10px 16px', borderBottom: i < history.length - 1 ? '1px solid #1a1a1a' : 'none', display:'flex', justifyContent:'space-between', alignItems:'center' }}>
+                    <div>
+                      <div style=${{ fontSize:'11px', color:'#ccc' }}>${fmtDate(p.date)}</div>
+                      <div style=${{ fontSize:'10px', color:'#555', marginTop:'2px' }}>${p.sets} sets · avg ${p.avgReps} reps</div>
+                    </div>
+                    <div style=${{ textAlign:'right' }}>
+                      <div style=${{ fontFamily:"'Bebas Neue',cursive", fontSize:'22px', color:'#e8501a', lineHeight:1 }}>
+                        ${isBW ? p.avgReps : p.maxW}
+                        <span style=${{ fontSize:'11px', color:'#555' }}> ${isBW ? 'avg reps' : 'lbs'}</span>
+                      </div>
+                      ${p.bestSet.r && !isBW ? html`<div style=${{ fontSize:'10px', color:'#555', marginTop:'2px' }}>best: ${p.bestSet.w}×${p.bestSet.r}</div>` : null}
+                    </div>
+                  </div>`)}
+              </div>
+            </div>`}
+        </div>`;
+    }
+
+    function WorkoutProgress({ sessions, workouts, selected, onSelect }) {
+      const [expanded, setExpanded] = useState(null);
+      const workoutSessions = useMemo(() => {
+        if (!selected) return [];
+        return sessions.filter(s => s.template_id === selected)
+          .sort((a, b) => new Date(b.date_local) - new Date(a.date_local));
+      }, [sessions, selected]);
+      const workoutName = workouts.find(w => w.id === selected)?.name || '';
+
+      return html`
+        <div>
+          <div class="filter-row">
+            ${workouts.map(w => html`
+              <button class=${'filter-chip' + (selected === w.id ? ' active' : '')} key=${w.id}
+                onClick=${() => { onSelect(selected === w.id ? null : w.id); setExpanded(null); }}>
+                ${(w.name || w.id).toUpperCase()}
+              </button>`)}
+          </div>
+          ${!selected ? html`<${EmptyState} msg="SELECT A WORKOUT" />` : workoutSessions.length === 0
+            ? html`<${EmptyState} msg="NO SESSIONS LOGGED" />`
+            : html`
+            <div>
+              <div class="section-label" style=${{ marginBottom:'12px' }}>
+                <span class="section-label-dot">▸</span>
+                ${workoutName.toUpperCase()} · ${workoutSessions.length} SESSIONS
+              </div>
+              ${workoutSessions.map((s, i) => {
+                const isOpen = expanded === i;
+                const exs = parseExs(s.exercises);
+                return html`
+                  <div class="session-card" key=${i}>
+                    <div class="session-header" onClick=${() => setExpanded(isOpen ? null : i)}>
+                      <div style=${{ flex:1 }}>
+                        <div style=${{ display:'flex', justifyContent:'space-between' }}>
+                          <div style=${{ fontSize:'12px', color:'#ccc', fontWeight:600 }}>${fmtDate(s.date_local)}</div>
+                          <div style=${{ fontSize:'10px', color:'#555' }}>${isOpen ? '▲' : '▼'}</div>
+                        </div>
+                        <div style=${{ fontSize:'10px', color:'#555', marginTop:'4px', display:'flex', gap:'12px' }}>
+                          <span>${fmtDur(s.duration_seconds)}</span>
+                          <span>${s.total_sets_logged || 0} sets</span>
+                          <span>Readiness ${s.readiness}</span>
+                        </div>
+                      </div>
+                    </div>
+                    ${isOpen ? html`
+                      <div class="session-body">
+                        ${exs.map((ex, j) => {
+                          const setStr = ex.sets.map(st => (st.weight ? st.weight + '×' : '') + st.reps).join('  ');
+                          return html`
+                            <div class="session-ex" key=${j}>
+                              <div class="ex-dot" style=${{ background: MUSCLE_COLORS[getMuscleGroup(ex.id)] || '#333' }}></div>
+                              <div class="ex-name">${ex.name}</div>
+                              <div class="ex-sets" style=${{ fontSize:'10px', color:'#555', whiteSpace:'nowrap' }}>${setStr || '—'}</div>
+                            </div>`;
+                        })}
+                      </div>` : null}
+                  </div>`;
+              })}
+            </div>`}
+        </div>`;
+    }
+
+    function ProgressScreen({ sessions }) {
+      const [mode, setMode] = useState('exercise');
+      const [selected, setSelected] = useState(null);
+
+      const exercises = useMemo(() => {
+        const map = {};
+        sessions.forEach(s => parseExs(s.exercises).forEach(ex => {
+          if (ex.id && !map[ex.id]) map[ex.id] = ex.name;
+        }));
+        return Object.entries(map).map(([id, name]) => ({ id, name })).sort((a, b) => a.name.localeCompare(b.name));
+      }, [sessions]);
+
+      const workouts = useMemo(() => {
+        const map = {};
+        sessions.forEach(s => { if (s.template_id) map[s.template_id] = s.template_name || s.template_id; });
+        return Object.entries(map).map(([id, name]) => ({ id, name }));
+      }, [sessions]);
+
+      useEffect(() => { setSelected(null); }, [mode]);
+
+      return html`
+        <div class="screen">
+          <div style=${{ display:'flex', gap:'8px', marginBottom:'20px' }}>
+            <button class=${'filter-chip' + (mode === 'exercise' ? ' active' : '')} onClick=${() => setMode('exercise')}>BY EXERCISE</button>
+            <button class=${'filter-chip' + (mode === 'workout' ? ' active' : '')} onClick=${() => setMode('workout')}>BY WORKOUT</button>
+          </div>
+          ${mode === 'exercise'
+            ? html`<${ExerciseProgress} sessions=${sessions} exercises=${exercises} selected=${selected} onSelect=${setSelected} />`
+            : html`<${WorkoutProgress} sessions=${sessions} workouts=${workouts} selected=${selected} onSelect=${setSelected} />`}
+        </div>`;
+    }
+
     function HistoryScreen({ sessions }) {
       const [filter, setFilter] = useState('all');
       const tids = useMemo(() => {
@@ -1404,11 +1578,12 @@
 
           ${error && html`<div class="error-banner">SUPABASE ERROR: ${error}</div>`}
 
-          ${tab === 'overview' && html`<${OverviewScreen}  sessions=${sessions} />`}
-          ${tab === 'strength' && html`<${StrengthScreen}  sessions=${sessions} />`}
-          ${tab === 'body'     && html`<${BodyScreen}       measurements=${measurements} onAdd=${m => setMeasurements(prev => [m, ...prev])} />`}
-          ${tab === 'cardio'   && html`<${CardioScreen}     sessions=${sessions} cardioSessions=${cardioSessions} gfitToken=${gfitToken} gfitData=${gfitData} gfitLoading=${gfitLoading} onConnectGfit=${handleConnect} onSyncGfit=${() => handleSync(gfitToken)} polarToken=${polarToken} polarLoading=${polarLoading} polarSynced=${polarSynced} onConnectPolar=${polarConnect} onSyncPolar=${() => handlePolarSync()} />`}
-          ${tab === 'history'  && html`<${HistoryScreen}    sessions=${sessions} />`}
+          ${tab === 'overview'  && html`<${OverviewScreen}  sessions=${sessions} />`}
+          ${tab === 'strength'  && html`<${StrengthScreen}  sessions=${sessions} />`}
+          ${tab === 'progress'  && html`<${ProgressScreen}  sessions=${sessions} />`}
+          ${tab === 'body'      && html`<${BodyScreen}       measurements=${measurements} onAdd=${m => setMeasurements(prev => [m, ...prev])} />`}
+          ${tab === 'cardio'    && html`<${CardioScreen}     sessions=${sessions} cardioSessions=${cardioSessions} gfitToken=${gfitToken} gfitData=${gfitData} gfitLoading=${gfitLoading} onConnectGfit=${handleConnect} onSyncGfit=${() => handleSync(gfitToken)} polarToken=${polarToken} polarLoading=${polarLoading} polarSynced=${polarSynced} onConnectPolar=${polarConnect} onSyncPolar=${() => handlePolarSync()} />`}
+          ${tab === 'history'   && html`<${HistoryScreen}    sessions=${sessions} />`}
 
           <nav class="bottom-nav">
             ${TABS.map(t => html`
