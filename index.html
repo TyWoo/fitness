@@ -372,11 +372,13 @@ body {
     <div class="subtitle">Tap a workout to begin</div>
   </div>
   <div class="greeting" id="greeting"></div>
+  <div id="deload-banner"></div>
   <div class="workout-cards" id="workout-cards"></div>
   <div style="margin-top:20px;">
     <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">Backup / Makeup Days</div>
     <div class="workout-cards" id="flex-cards"></div>
   </div>
+  <div id="deload-link"></div>
   <div class="home-bottom">
     <div class="home-btn" onclick="showScreen('history')">📊 History</div>
     <div class="home-btn" onclick="window.location.href='food.html'">🍽️ Food Log</div>
@@ -944,6 +946,16 @@ function renderHome() {
     `;
   });
   container.innerHTML = html;
+
+  // Deload banner / link
+  const deloadBanner = document.getElementById('deload-banner');
+  deloadBanner.innerHTML = state.deloadActive
+    ? `<div class="deload-banner-active">Deload Week Active <button class="deload-off-btn" onclick="setDeload(false)">Turn Off</button></div>`
+    : '';
+  const deloadLink = document.getElementById('deload-link');
+  deloadLink.innerHTML = state.deloadActive
+    ? ''
+    : `<div class="deload-start-link" onclick="setDeload(true)">Start Deload Week</div>`;
 
   // Render flexible/makeup templates below weekly schedule
   const flexTemplates = TEMPLATES.filter(t => t.isFlexible);
