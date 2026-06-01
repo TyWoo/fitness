@@ -641,7 +641,8 @@ const TEMPLATES = [
         weekB: { id: 'goblet_squat', name: 'Goblet Squat', reps: '12', startWeight: 53, unit: 'lbs', notes: 'Volume week. KB at chest, full depth.' } },
       { id: 'kb_swing', name: 'Kettlebell Swings', sets: 4, reps: '15', startWeight: 53, unit: 'lbs', rest: 60, notes: 'Hip snap, not arms.' },
       { id: 'box_jump', name: 'Box Jump', sets: 4, reps: '3', startWeight: 24, unit: 'in', rest: 90, notes: 'Step down. Full reset.', isPlyo: true },
-      { id: 'calf_raise', name: 'Standing Calf Raise (BB)', sets: 4, reps: '12-15', startWeight: 135, unit: 'lbs', rest: 60, superset: 'A', notes: '2 sec pause at top.' },
+      { id: 'calf_raise', name: 'Standing Calf Raise (BB)', sets: 4, reps: '12-15', startWeight: 135, unit: 'lbs', rest: 0, superset: 'A', notes: '2 sec pause at top.' },
+      { id: 'tib_raise', name: 'Tibialis Raise', sets: 4, reps: '15-20', startWeight: 0, unit: 'BW', rest: 60, superset: 'A', notes: 'Heels on floor, toes up. Antagonist to calf.' },
       { id: 'nordic', name: 'Nordic Curl', sets: 3, reps: '5-8', startWeight: 0, unit: 'BW', rest: 0, superset: 'B', notes: 'Eccentric focus. Hands to push up.' },
       { id: 'hip_thrust', name: 'Barbell Hip Thrust', sets: 3, reps: '12', startWeight: 185, unit: 'lbs', rest: 60, superset: 'B', notes: 'Squeeze glutes 2s at top.' },
     ],
@@ -712,6 +713,7 @@ let state = {
   setData: {}, // { exerciseId_setIdx: { weight, reps, logged } }
   emomState: null,
   amrapState: null,
+  deloadActive: localStorage.getItem('deload_active') === 'true',
 };
 
 // ============================================================
@@ -1671,6 +1673,17 @@ function isCurrentWeekA() {
 // For exercises with weekA/weekB variants, merges the week's properties
 // over the base exercise (including id/name overrides for full swaps).
 // For exercises without variants, returns the exercise unchanged.
+function setDeload(on) {
+  state.deloadActive = on;
+  localStorage.setItem('deload_active', on ? 'true' : 'false');
+  renderHome();
+}
+
+function getDeloadSets(ex) {
+  if (!state.deloadActive) return ex.sets;
+  return ex.isPlyo ? 1 : Math.ceil(ex.sets / 2);
+}
+
 function getEffectiveExercise(ex) {
   const variant = isCurrentWeekA() ? ex.weekA : ex.weekB;
   if (!variant) return ex;
