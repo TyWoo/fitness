@@ -1096,7 +1096,8 @@ function renderExercises() {
 function renderExerciseInner(ex, lastSession) {
   ex = getEffectiveExercise(ex);
   const lastEx = lastSession?.exercises?.find(e => e.id === ex.id);
-  const adjustedSets = state.readiness < 70 && state.readiness >= 55 ? Math.max(ex.sets - 1, 1) : ex.sets;
+  const baseSets = getDeloadSets(ex);
+  const adjustedSets = state.readiness < 70 && state.readiness >= 55 ? Math.max(baseSets - 1, 1) : baseSets;
   const suggestion = getSuggestion(ex, lastEx, state.readiness);
 
   const suggBadge = suggestion
@@ -1186,7 +1187,8 @@ function updateBadge(exId) {
   // Fall back to finding by resolved id if raw lookup fails
   const ex = rawEx ? getEffectiveExercise(rawEx) : tmpl.exercises.find(e => getEffectiveExercise(e).id === exId);
   if (!ex) return;
-  const adjustedSets = state.readiness < 70 && state.readiness >= 55 ? Math.max(ex.sets - 1, 1) : ex.sets;
+  const baseSets = getDeloadSets(ex);
+  const adjustedSets = state.readiness < 70 && state.readiness >= 55 ? Math.max(baseSets - 1, 1) : baseSets;
   let logged = 0;
   for (let s = 0; s < adjustedSets; s++) {
     if (state.setData[`${exId}_${s}`]?.logged) logged++;
@@ -1465,7 +1467,8 @@ function buildSessionData(tmpl, duration, h10Data) {
   const exercises = [];
   tmpl.exercises.forEach(ex => {
     ex = getEffectiveExercise(ex); // resolve week-appropriate id/name
-    const adjustedSets = state.readiness < 70 && state.readiness >= 55 ? Math.max(ex.sets - 1, 1) : ex.sets;
+    const baseSets = getDeloadSets(ex);
+    const adjustedSets = state.readiness < 70 && state.readiness >= 55 ? Math.max(baseSets - 1, 1) : baseSets;
     const sets = [];
     for (let s = 0; s < adjustedSets; s++) {
       const key = `${ex.id}_${s}`;
