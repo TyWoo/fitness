@@ -395,6 +395,7 @@ body {
       <div class="pw-title" id="pw-title" style="margin:0;flex:1;"></div>
     </div>
     <div id="pw-week-label" style="display:none;text-align:center;font-size:13px;font-weight:700;margin-bottom:16px;padding:8px 16px;border-radius:8px;"></div>
+    <div id="pw-deload-banner"></div>
     <div class="readiness-input">
       <div class="readiness-label">Oura Readiness Score (or estimate)</div>
       <div class="readiness-value" id="readiness-val">75</div>
@@ -421,6 +422,7 @@ body {
     </div>
     <button class="wo-topbar-btn finish" onclick="finishWorkout()">Finish</button>
   </div>
+  <div id="wo-deload-banner"></div>
   <div id="exercise-list"></div>
 </div>
 
@@ -1001,6 +1003,12 @@ function selectWorkout(templateId) {
       weekLabel.style.color = isA ? 'var(--accent)' : 'var(--purple)';
     }
   }
+  const pwDeload = document.getElementById('pw-deload-banner');
+  if (pwDeload) {
+    pwDeload.innerHTML = state.deloadActive
+      ? `<div class="deload-banner-active" style="margin-bottom:16px">Deload Week Active — sets reduced</div>`
+      : '';
+  }
   showScreen('pre');
 }
 
@@ -1028,6 +1036,12 @@ function startWorkout() {
   clearInterval(state.workoutTimer);
   state.workoutTimer = setInterval(updateWorkoutTimer, 1000);
 
+  const woBanner = document.getElementById('wo-deload-banner');
+  if (woBanner) {
+    woBanner.innerHTML = state.deloadActive
+      ? `<div class="deload-banner-active" style="margin:12px 16px 0">Deload Week — sets reduced</div>`
+      : '';
+  }
   renderExercises();
   showScreen('workout');
 }
