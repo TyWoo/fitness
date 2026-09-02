@@ -591,6 +591,91 @@ body {
   <div id="history-list"></div>
 </div>
 
+<!-- ==================== NORWEGIAN 4x4 SETUP ==================== -->
+<div id="screen-norwegian" class="screen">
+  <div class="norw-setup">
+    <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+      <button class="back-btn" onclick="norwCleanup(); showScreen('home')">←</button>
+      <div class="norw-setup-title" style="margin:0;flex:1;">Norwegian 4×4</div>
+    </div>
+
+    <button class="norw-connect-btn" id="norw-connect-btn" onclick="norwConnectHR()">
+      ❤️ Connect Polar H10
+    </button>
+
+    <div class="norw-config-card">
+      <div class="norw-config-row">
+        <label>Work Duration (min)</label>
+        <input type="number" id="norw-work-dur" value="4" min="1" max="10">
+      </div>
+      <div class="norw-config-row">
+        <label>Recovery Duration (min)</label>
+        <input type="number" id="norw-recov-dur" value="3" min="1" max="10">
+      </div>
+      <div class="norw-config-row">
+        <label>Cycles</label>
+        <input type="number" id="norw-cycles" value="4" min="1" max="10">
+      </div>
+      <div class="norw-config-row">
+        <label>Resting HR (bpm)</label>
+        <input type="number" id="norw-resting-hr" value="60" min="30" max="100">
+      </div>
+    </div>
+
+    <button class="norw-start-btn" id="norw-start-btn" onclick="norwStart()">
+      START RUN
+    </button>
+  </div>
+</div>
+
+<!-- ==================== NORWEGIAN 4x4 RUNNING ==================== -->
+<div id="screen-norw-running" class="screen">
+  <div class="norw-running">
+    <div class="norw-bt-warning" id="norw-bt-warning" onclick="norwReconnectHR()">
+      ⚠️ HR disconnected — tap to reconnect
+    </div>
+    <div class="norw-phase" id="norw-phase">WORK</div>
+    <div class="norw-countdown" id="norw-countdown">4:00</div>
+    <div class="norw-hr-display" id="norw-hr">---<span class="bpm-label"> bpm</span></div>
+    <div class="norw-zone-badge" id="norw-zone-badge">--</div>
+    <div class="norw-cycle" id="norw-cycle">Cycle 1 of 4</div>
+    <div class="norw-metrics">
+      <div class="norw-metric">
+        <div class="norw-metric-val" id="norw-dist">0.00</div>
+        <div class="norw-metric-label">km</div>
+      </div>
+      <div class="norw-metric">
+        <div class="norw-metric-val" id="norw-pace">--:--</div>
+        <div class="norw-metric-label">min/km</div>
+      </div>
+      <div class="norw-metric">
+        <div class="norw-metric-val" id="norw-elev">0</div>
+        <div class="norw-metric-label">↑ elev (m)</div>
+      </div>
+    </div>
+    <button class="norw-stop-btn" onclick="norwStop()">STOP</button>
+  </div>
+</div>
+
+<!-- ==================== NORWEGIAN 4x4 SUMMARY ==================== -->
+<div id="screen-norw-summary" class="screen">
+  <div class="norw-summary-header">
+    <div style="font-size:40px;margin-bottom:8px;">🏃</div>
+    <h2>Run Complete!</h2>
+    <div class="duration" id="norw-sum-duration"></div>
+    <div id="norw-sync-status" style="margin-top:8px;font-size:11px;font-family:'JetBrains Mono','SF Mono',monospace;letter-spacing:0.3px;"></div>
+  </div>
+  <div id="norw-sum-intervals"></div>
+  <div style="font-size:13px;font-weight:700;color:var(--text-dim);margin:16px 0 8px;letter-spacing:0.5px;">ZONE TIME</div>
+  <div class="norw-zone-bar" id="norw-zone-bar"></div>
+  <div class="norw-totals" id="norw-sum-totals"></div>
+  <div class="norw-export-btns">
+    <div class="norw-export-btn" onclick="norwExportCSV()">📊 Export CSV</div>
+    <div class="norw-export-btn" onclick="norwExportJSON()">📤 Export JSON</div>
+    <div class="norw-export-btn" onclick="showScreen('home')">← Done</div>
+  </div>
+</div>
+
 <div class="toast" id="toast"></div>
 
 <script>
