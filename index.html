@@ -1182,6 +1182,22 @@ function renderHome() {
     });
     flexContainer.innerHTML = flexHtml;
   }
+
+  // Norwegian 4x4 card — always visible
+  const norwCard = document.createElement('div');
+  norwCard.style.marginTop = '20px';
+  norwCard.innerHTML = `
+    <div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin-bottom:10px;">Cardio</div>
+    <div class="workout-card" onclick="showScreen('norwegian')" style="border-color:var(--red);">
+      <div class="wc-day" style="background:var(--red-dim);color:var(--red);font-size:16px;">🏃</div>
+      <div class="wc-info">
+        <div class="wc-title">Norwegian 4×4</div>
+        <div class="wc-desc">4 min work · 3 min recovery · 4 cycles</div>
+      </div>
+      <div class="wc-arrow">›</div>
+    </div>
+  `;
+  document.getElementById('workout-cards').parentElement.appendChild(norwCard);
 }
 
 // ============================================================
@@ -1838,6 +1854,8 @@ function cleanup() {
   clearInterval(state.amrapTimer);
   skipRest();
   state.activeTemplate = null;
+  // Norwegian cleanup
+  norwCleanup();
 }
 
 function showToast(msg, isError) {
@@ -1900,7 +1918,7 @@ function downloadJSON(data, filename) {
 
 // Warn before leaving with an active workout
 window.addEventListener('beforeunload', (e) => {
-  if (state.activeTemplate && state.startTime) {
+  if ((state.activeTemplate && state.startTime) || norwState.running) {
     e.preventDefault();
   }
 });
@@ -2553,6 +2571,23 @@ function norwExportCSV() {
 function norwExportJSON() {
   const session = norwBuildSession();
   downloadJSON(session, `norwegian_4x4_${session.dateLocal}.json`);
+}
+
+function norwCleanup() {
+  norwState.running = false;
+  clearInterval(norwState.timerInterval);
+  norwStopGPS();
+  norwReleaseWakeLock();
+  if (norwState.btDevice && norwState.btDevice.gatt && norwState.btDevice.gatt.connected) {
+    try {
+      if (norwState.btCharacteristic) {
+        norwState.btCharacteristic.stopNotifications();
+      }
+    } catch (e) { /* ignore */ }
+  }
+  norwState.currentHR = null;
+  norwState.hrConnected = false;
+  norwState.currentInterval = null;
 }
 
 // Init
