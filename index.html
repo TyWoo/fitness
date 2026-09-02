@@ -2201,6 +2201,157 @@ function norwVibrate(pattern) {
   if (navigator.vibrate) navigator.vibrate(pattern);
 }
 
+// ── Timer Core ────────────────────────────────────────────────
+function norwStart() {
+  norwState.workDuration = parseInt(document.getElementById('norw-work-dur').value) * 60;
+  norwState.recoveryDuration = parseInt(document.getElementById('norw-recov-dur').value) * 60;
+  norwState.cycles = parseInt(document.getElementById('norw-cycles').value);
+  norwState.restingHR = parseInt(document.getElementById('norw-resting-hr').value);
+
+  norwState.phase = 'work';
+  norwState.currentCycle = 1;
+  norwState.secondsLeft = norwState.workDuration;
+  norwState.running = true;
+  norwState.startTime = Date.now();
+  norwState.intervals = [];
+  norwState.currentInterval = norwNewInterval('work', 1);
+
+  norwGetAudioCtx().resume();
+  norwStartGPS();
+  norwRequestWakeLock();
+
+  clearInterval(norwState.timerInterval);
+  norwState.timerInterval = setInterval(norwTick, 1000);
+
+  norwPlayGo();
+  norwVibrate([200, 100, 200]);
+
+  norwRenderRunning();
+  showScreen('norw-running');
+}
+
+function norwNewInterval(phase, cycle) {
+  return {
+    phase,
+    cycle,
+    duration: phase === 'work' ? norwState.workDuration : norwState.recoveryDuration,
+    hrSamples: [],
+    distance: 0,
+    elevGain: 0,
+    elevLoss: 0,
+    startTime: Date.now(),
+  };
+}
+
+function norwTick() {
+  if (!norwState.running) return;
+  norwState.secondsLeft--;
+
+  if (norwState.secondsLeft === 10) {
+    norwPlayWarning();
+    norwVibrate([100]);
+  }
+
+  if (norwState.secondsLeft <= 0) {
+    norwFinishInterval();
+    return;
+  }
+
+  norwRenderRunning();
+}
+
+function norwFinishInterval() {
+  const iv = norwState.currentInterval;
+  iv.endTime = Date.now();
+  norwState.intervals.push(iv);
+
+  if (norwState.phase === 'work') {
+    norwState.phase = 'recovery';
+    norwState.secondsLeft = norwState.recoveryDuration;
+    norwState.currentInterval = norwNewInterval('recovery', norwState.currentCycle);
+    norwPlayRecover();
+    norwVibrate([200, 100, 200]);
+  } else {
+    if (norwState.currentCycle >= norwState.cycles) {
+      norwFinishSession();
+      return;
+    }
+    norwState.currentCycle++;
+    norwState.phase = 'work';
+    norwState.secondsLeft = norwState.workDuration;
+    norwState.currentInterval = norwNewInterval('work', norwState.currentCycle);
+    norwPlayGo();
+    norwVibrate([200, 100, 200]);
+  }
+
+  const runScreen = document.getElementById('screen-norw-running');
+  if (runScreen) {
+    runScreen.classList.add('norw-flash');
+    setTimeout(() => runScreen.classList.remove('norw-flash'), 500);
+  }
+
+  norwRenderRunning();
+}
+
+function norwStop() {
+  if (!confirm('Stop the run? Data for the current interval will be lost.')) return;
+  const iv = norwState.currentInterval;
+  if (iv && iv.hrSamples.length > 0) {
+    iv.endTime = Date.now();
+    iv.duration = Math.round((iv.endTime - iv.startTime) / 1000);
+    norwState.intervals.push(iv);
+  }
+  norwFinishSession();
+}
+
+function norwFinishSession() {
+  norwState.running = false;
+  clearInterval(norwState.timerInterval);
+  norwStopGPS();
+  norwReleaseWakeLock();
+  norwRenderSummary();
+  showScreen('norw-summary');
+
+  const session = norwBuildSession();
+  norwSaveToLocalStorage(session);
+  norwSyncToSupabase(session);
+}
+
+function norwRenderRunning() {
+  const phaseEl = document.getElementById('norw-phase');
+  const countEl = document.getElementById('norw-countdown');
+  const cycleEl = document.getElementById('norw-cycle');
+
+  if (phaseEl) {
+    phaseEl.textContent = norwState.phase === 'work' ? 'WORK' : 'RECOVER';
+    phaseEl.className = 'norw-phase ' + (norwState.phase === 'work' ? 'work' : 'recover');
+  }
+  if (countEl) {
+    const m = Math.floor(norwState.secondsLeft / 60);
+    const s = norwState.secondsLeft % 60;
+    countEl.textContent = m + ':' + s.toString().padStart(2, '0');
+  }
+  if (cycleEl) {
+    cycleEl.textContent = `Cycle ${norwState.currentCycle} of ${norwState.cycles}`;
+  }
+  norwUpdateMetrics();
+}
+
+async function norwRequestWakeLock() {
+  try {
+    if ('wakeLock' in navigator) {
+      norwState.wakeLock = await navigator.wakeLock.request('screen');
+    }
+  } catch (e) { /* wake lock not available */ }
+}
+
+function norwReleaseWakeLock() {
+  if (norwState.wakeLock) {
+    norwState.wakeLock.release();
+    norwState.wakeLock = null;
+  }
+}
+
 // Init
 renderHome();
 </script>
