@@ -1981,6 +1981,95 @@ function norwGetTargetStatus(hr) {
   return 'target';
 }
 
+// ── Bluetooth HR ──────────────────────────────────────────────
+async function norwConnectHR() {
+  const btn = document.getElementById('norw-connect-btn');
+  btn.className = 'norw-connect-btn connecting';
+  btn.textContent = '⏳ Connecting...';
+  try {
+    const device = await navigator.bluetooth.requestDevice({
+      filters: [{ services: ['heart_rate'] }],
+      optionalServices: ['heart_rate'],
+    });
+    device.addEventListener('gattserverdisconnected', norwOnHRDisconnect);
+    const server = await device.gatt.connect();
+    const service = await server.getPrimaryService('heart_rate');
+    const char = await service.getCharacteristic('heart_rate_measurement');
+    char.addEventListener('characteristicvaluechanged', norwOnHRValue);
+    await char.startNotifications();
+    norwState.btDevice = device;
+    norwState.btCharacteristic = char;
+    norwState.hrConnected = true;
+    btn.className = 'norw-connect-btn connected';
+    btn.textContent = '✓ Polar H10 Connected';
+  } catch (err) {
+    console.error('BT connect error:', err);
+    btn.className = 'norw-connect-btn';
+    btn.textContent = '❤️ Connect Polar H10';
+    if (err.name !== 'NotFoundError') {
+      showToast('Bluetooth error: ' + err.message, true);
+    }
+  }
+}
+
+function norwOnHRValue(event) {
+  const value = event.target.value;
+  const flags = value.getUint8(0);
+  const is16Bit = flags & 0x01;
+  const hr = is16Bit ? value.getUint16(1, true) : value.getUint8(1);
+  norwState.currentHR = hr;
+  if (norwState.running && norwState.currentInterval) {
+    norwState.currentInterval.hrSamples.push(hr);
+  }
+  const hrEl = document.getElementById('norw-hr');
+  if (hrEl && norwState.running) {
+    hrEl.innerHTML = hr + '<span class="bpm-label"> bpm</span>';
+    norwUpdateZoneBadge(hr);
+  }
+}
+
+function norwOnHRDisconnect() {
+  norwState.hrConnected = false;
+  norwState.currentHR = null;
+  const warning = document.getElementById('norw-bt-warning');
+  if (warning) warning.style.display = 'block';
+  const hrEl = document.getElementById('norw-hr');
+  if (hrEl) hrEl.innerHTML = '---<span class="bpm-label"> bpm</span>';
+  const btn = document.getElementById('norw-connect-btn');
+  if (btn) {
+    btn.className = 'norw-connect-btn';
+    btn.textContent = '❤️ Connect Polar H10';
+  }
+}
+
+async function norwReconnectHR() {
+  if (norwState.btDevice && norwState.btDevice.gatt) {
+    try {
+      const server = await norwState.btDevice.gatt.connect();
+      const service = await server.getPrimaryService('heart_rate');
+      const char = await service.getCharacteristic('heart_rate_measurement');
+      char.addEventListener('characteristicvaluechanged', norwOnHRValue);
+      await char.startNotifications();
+      norwState.btCharacteristic = char;
+      norwState.hrConnected = true;
+      const warning = document.getElementById('norw-bt-warning');
+      if (warning) warning.style.display = 'none';
+    } catch (err) {
+      showToast('Reconnect failed: ' + err.message, true);
+    }
+  }
+}
+
+function norwUpdateZoneBadge(hr) {
+  const badge = document.getElementById('norw-zone-badge');
+  if (!badge) return;
+  const zone = norwGetZone(hr, norwState.restingHR);
+  const status = norwGetTargetStatus(hr);
+  const target = norwGetTargetZone();
+  badge.textContent = `Zone ${zone} — ${status === 'target' ? 'IN TARGET' : status === 'above' ? 'ABOVE Z' + target : 'BELOW Z' + target}`;
+  badge.className = 'norw-zone-badge ' + status;
+}
+
 // Init
 renderHome();
 </script>
