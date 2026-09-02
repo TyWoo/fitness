@@ -2352,6 +2352,186 @@ function norwReleaseWakeLock() {
   }
 }
 
+// ── Session Data ──────────────────────────────────────────────
+function norwBuildInterval(iv) {
+  const samples = iv.hrSamples;
+  const hrData = samples.length > 0 ? {
+    avg: Math.round(samples.reduce((a, b) => a + b, 0) / samples.length),
+    min: Math.min(...samples),
+    max: Math.max(...samples),
+    samples: samples,
+  } : { avg: 0, min: 0, max: 0, samples: [] };
+
+  const durationSec = iv.endTime ? Math.round((iv.endTime - iv.startTime) / 1000) : iv.duration;
+  const paceSecPerKm = iv.distance > 0.01 ? durationSec / iv.distance : null;
+
+  return {
+    phase: iv.phase,
+    cycle: iv.cycle,
+    duration: durationSec,
+    hr: hrData,
+    distance_km: Math.round(iv.distance * 1000) / 1000,
+    pace_avg: norwFormatPace(paceSecPerKm),
+    elevation: {
+      gain_m: Math.round(iv.elevGain),
+      loss_m: Math.round(iv.elevLoss),
+    },
+  };
+}
+
+function norwBuildSession() {
+  const intervals = norwState.intervals.map(norwBuildInterval);
+  const allSamples = intervals.flatMap(iv => iv.hr.samples);
+  const totalDist = intervals.reduce((sum, iv) => sum + iv.distance_km, 0);
+  const totalDuration = intervals.reduce((sum, iv) => sum + iv.duration, 0);
+  const totalElevGain = intervals.reduce((sum, iv) => sum + iv.elevation.gain_m, 0);
+  const totalElevLoss = intervals.reduce((sum, iv) => sum + iv.elevation.loss_m, 0);
+
+  const zoneTime = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 };
+  intervals.forEach(iv => {
+    iv.hr.samples.forEach(hr => {
+      const z = norwGetZone(hr, norwState.restingHR);
+      if (z) zoneTime['z' + z]++;
+    });
+  });
+
+  const avgPaceSecPerKm = totalDist > 0.01 ? totalDuration / totalDist : null;
+
+  const now = new Date();
+  return {
+    type: 'norwegian_4x4',
+    date: now.toISOString(),
+    dateLocal: now.toISOString().slice(0, 10),
+    duration_seconds: totalDuration,
+    config: {
+      maxHR: NORW_MAX_HR,
+      restingHR: norwState.restingHR,
+      workDuration: norwState.workDuration,
+      recoveryDuration: norwState.recoveryDuration,
+      cycles: norwState.cycles,
+    },
+    intervals,
+    totals: {
+      distance_km: Math.round(totalDist * 1000) / 1000,
+      avg_pace: norwFormatPace(avgPaceSecPerKm),
+      avg_hr: allSamples.length > 0 ? Math.round(allSamples.reduce((a, b) => a + b, 0) / allSamples.length) : 0,
+      max_hr: allSamples.length > 0 ? Math.max(...allSamples) : 0,
+      time_in_zone_seconds: zoneTime,
+      elevation: { gain_m: Math.round(totalElevGain), loss_m: Math.round(totalElevLoss) },
+    },
+  };
+}
+
+// ── Summary Renderer ──────────────────────────────────────────
+function norwRenderSummary() {
+  const session = norwBuildSession();
+
+  const durEl = document.getElementById('norw-sum-duration');
+  if (durEl) {
+    const m = Math.floor(session.duration_seconds / 60);
+    const s = session.duration_seconds % 60;
+    durEl.textContent = m + ':' + s.toString().padStart(2, '0');
+  }
+
+  const container = document.getElementById('norw-sum-intervals');
+  if (container) {
+    let html = '';
+    session.intervals.forEach(iv => {
+      const isWork = iv.phase === 'work';
+      html += `
+        <div class="norw-interval-card ${isWork ? 'work' : 'recovery'}">
+          <div class="norw-interval-header">
+            <span class="norw-interval-phase" style="color:${isWork ? 'var(--red)' : 'var(--green)'}">
+              ${isWork ? 'WORK' : 'RECOVER'} — Cycle ${iv.cycle}
+            </span>
+            <span style="font-size:12px;color:var(--text-dim)">${Math.floor(iv.duration / 60)}:${(iv.duration % 60).toString().padStart(2, '0')}</span>
+          </div>
+          <div class="norw-interval-grid">
+            <div class="norw-interval-stat">Avg HR<span>${iv.hr.avg || '--'}</span></div>
+            <div class="norw-interval-stat">Max HR<span>${iv.hr.max || '--'}</span></div>
+            <div class="norw-interval-stat">Dist<span>${iv.distance_km.toFixed(2)} km</span></div>
+            <div class="norw-interval-stat">Pace<span>${iv.pace_avg}</span></div>
+            <div class="norw-interval-stat">↑ Elev<span>${iv.elevation.gain_m} m</span></div>
+            <div class="norw-interval-stat">↓ Elev<span>${iv.elevation.loss_m} m</span></div>
+          </div>
+        </div>
+      `;
+    });
+    container.innerHTML = html;
+  }
+
+  const zoneBar = document.getElementById('norw-zone-bar');
+  if (zoneBar) {
+    const zt = session.totals.time_in_zone_seconds;
+    const total = zt.z1 + zt.z2 + zt.z3 + zt.z4 + zt.z5;
+    if (total > 0) {
+      zoneBar.innerHTML = [1, 2, 3, 4, 5].map(z => {
+        const pct = (zt['z' + z] / total * 100).toFixed(1);
+        const mins = Math.floor(zt['z' + z] / 60);
+        const secs = zt['z' + z] % 60;
+        return pct > 0
+          ? `<div style="width:${pct}%;background:${NORW_ZONE_COLORS[z]}" title="Z${z}: ${mins}:${secs.toString().padStart(2, '0')}"></div>`
+          : '';
+      }).join('');
+    }
+  }
+
+  const totalsEl = document.getElementById('norw-sum-totals');
+  if (totalsEl) {
+    const t = session.totals;
+    totalsEl.innerHTML = `
+      <div class="norw-totals-grid">
+        <div class="norw-interval-stat">Distance<span>${t.distance_km.toFixed(2)} km</span></div>
+        <div class="norw-interval-stat">Avg Pace<span>${t.avg_pace}</span></div>
+        <div class="norw-interval-stat">Avg HR<span>${t.avg_hr} bpm</span></div>
+        <div class="norw-interval-stat">Max HR<span>${t.max_hr} bpm</span></div>
+        <div class="norw-interval-stat">↑ Elevation<span>${t.elevation.gain_m} m</span></div>
+        <div class="norw-interval-stat">↓ Elevation<span>${t.elevation.loss_m} m</span></div>
+      </div>
+    `;
+  }
+}
+
+// ── Persistence ───────────────────────────────────────────────
+function norwSaveToLocalStorage(session) {
+  const history = JSON.parse(localStorage.getItem('norwegian_history') || '[]');
+  history.unshift(session);
+  localStorage.setItem('norwegian_history', JSON.stringify(history));
+}
+
+async function norwSyncToSupabase(session) {
+  const statusEl = document.getElementById('norw-sync-status');
+  const setStatus = (msg, color) => { if (statusEl) statusEl.innerHTML = `<span style="color:${color}">${msg}</span>`; };
+  setStatus('⏳ Syncing...', '#f59e0b');
+  try {
+    const row = {
+      date_local: session.dateLocal,
+      date_iso: session.date,
+      template_id: 'norwegian_4x4',
+      template_name: 'Norwegian 4x4',
+      duration_seconds: session.duration_seconds,
+      readiness: null,
+      exercises: JSON.stringify(session.intervals),
+      total_sets_logged: session.intervals.length,
+    };
+    const res = await fetch(`${SB_URL}/${WO_TABLE}`, {
+      method: 'POST',
+      headers: sbHeaders({ 'Prefer': 'resolution=merge-duplicates,return=minimal' }),
+      body: JSON.stringify(row),
+    });
+    if (!res.ok) {
+      const err = await res.text();
+      console.error('Norwegian sync error:', res.status, err);
+      setStatus('⚠️ ' + (err || res.statusText), '#ef4444');
+      return;
+    }
+    setStatus('✅ Synced to Supabase', '#10b981');
+  } catch (err) {
+    console.error('Norwegian sync error:', err);
+    setStatus('⚠️ ' + (err.message || String(err)), '#ef4444');
+  }
+}
+
 // Init
 renderHome();
 </script>
