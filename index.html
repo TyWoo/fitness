@@ -2160,6 +2160,47 @@ function norwUpdateMetrics() {
   if (elevEl) elevEl.textContent = Math.round(norwGetTotalElevGain());
 }
 
+// ── Audio & Vibration ─────────────────────────────────────────
+function norwGetAudioCtx() {
+  if (!norwState.audioCtx) {
+    norwState.audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  }
+  return norwState.audioCtx;
+}
+
+function norwPlayTone(freqStart, freqEnd, duration) {
+  try {
+    const ctx = norwGetAudioCtx();
+    const osc = ctx.createOscillator();
+    const gain = ctx.createGain();
+    osc.connect(gain);
+    gain.connect(ctx.destination);
+    osc.frequency.setValueAtTime(freqStart, ctx.currentTime);
+    osc.frequency.linearRampToValueAtTime(freqEnd, ctx.currentTime + duration);
+    gain.gain.setValueAtTime(0.5, ctx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.01, ctx.currentTime + duration);
+    osc.start();
+    osc.stop(ctx.currentTime + duration);
+  } catch (e) { /* audio not available */ }
+}
+
+function norwPlayGo() {
+  norwPlayTone(440, 880, 0.3);
+  setTimeout(() => norwPlayTone(880, 1320, 0.3), 350);
+}
+
+function norwPlayRecover() {
+  norwPlayTone(880, 440, 0.4);
+}
+
+function norwPlayWarning() {
+  norwPlayTone(660, 660, 0.15);
+}
+
+function norwVibrate(pattern) {
+  if (navigator.vibrate) navigator.vibrate(pattern);
+}
+
 // Init
 renderHome();
 </script>
