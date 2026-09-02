@@ -2532,6 +2532,29 @@ async function norwSyncToSupabase(session) {
   }
 }
 
+// ── Export ─────────────────────────────────────────────────────
+function norwExportCSV() {
+  const session = norwBuildSession();
+  const headers = ['cycle', 'phase', 'duration_sec', 'avg_hr', 'min_hr', 'max_hr', 'distance_km', 'pace', 'elevation_gain_m', 'elevation_loss_m'];
+  const rows = session.intervals.map(iv => [
+    iv.cycle, iv.phase, iv.duration, iv.hr.avg, iv.hr.min, iv.hr.max,
+    iv.distance_km.toFixed(3), iv.pace_avg, iv.elevation.gain_m, iv.elevation.loss_m,
+  ].join(','));
+  const csv = [headers.join(','), ...rows].join('\n');
+  const blob = new Blob([csv], { type: 'text/csv' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = `norwegian_4x4_${session.dateLocal}.csv`;
+  a.click();
+  URL.revokeObjectURL(a.href);
+  showToast('CSV downloaded!');
+}
+
+function norwExportJSON() {
+  const session = norwBuildSession();
+  downloadJSON(session, `norwegian_4x4_${session.dateLocal}.json`);
+}
+
 // Init
 renderHome();
 </script>
