@@ -1905,6 +1905,82 @@ window.addEventListener('beforeunload', (e) => {
   }
 });
 
+// ============================================================
+// NORWEGIAN 4x4
+// ============================================================
+const NORW_MAX_HR = 178;
+const NORW_ZONE_RANGES = [
+  { zone: 1, min: 0.50, max: 0.60 },
+  { zone: 2, min: 0.60, max: 0.70 },
+  { zone: 3, min: 0.70, max: 0.80 },
+  { zone: 4, min: 0.80, max: 0.90 },
+  { zone: 5, min: 0.90, max: 1.00 },
+];
+const NORW_ZONE_COLORS = { 1: '#3498db', 2: '#2ecc71', 3: '#f1c40f', 4: '#e67e22', 5: '#e74c3c' };
+
+const norwState = {
+  // Config
+  workDuration: 240,
+  recoveryDuration: 180,
+  cycles: 4,
+  restingHR: 60,
+  // Bluetooth
+  btDevice: null,
+  btCharacteristic: null,
+  hrConnected: false,
+  currentHR: null,
+  // GPS
+  gpsWatchId: null,
+  lastPosition: null,
+  gpsPoints: [],
+  // Timer
+  timerInterval: null,
+  phase: 'work',
+  currentCycle: 1,
+  secondsLeft: 240,
+  running: false,
+  // Wake lock
+  wakeLock: null,
+  // Session data
+  startTime: null,
+  intervals: [],
+  currentInterval: null,
+  // Audio
+  audioCtx: null,
+};
+
+function norwGetZoneBounds(restingHR) {
+  const hrr = NORW_MAX_HR - restingHR;
+  return NORW_ZONE_RANGES.map(z => ({
+    zone: z.zone,
+    lo: Math.round(restingHR + hrr * z.min),
+    hi: Math.round(restingHR + hrr * z.max),
+  }));
+}
+
+function norwGetZone(hr, restingHR) {
+  if (!hr) return null;
+  const bounds = norwGetZoneBounds(restingHR);
+  for (let i = bounds.length - 1; i >= 0; i--) {
+    if (hr >= bounds[i].lo) return bounds[i].zone;
+  }
+  return 1;
+}
+
+function norwGetTargetZone() {
+  return norwState.phase === 'work' ? 4 : 2;
+}
+
+function norwGetTargetStatus(hr) {
+  if (!hr) return 'below';
+  const target = norwGetTargetZone();
+  const bounds = norwGetZoneBounds(norwState.restingHR);
+  const range = bounds[target - 1];
+  if (hr < range.lo) return 'below';
+  if (hr > range.hi) return 'above';
+  return 'target';
+}
+
 // Init
 renderHome();
 </script>
