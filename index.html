@@ -2070,6 +2070,96 @@ function norwUpdateZoneBadge(hr) {
   badge.className = 'norw-zone-badge ' + status;
 }
 
+// ── GPS ───────────────────────────────────────────────────────
+function norwStartGPS() {
+  if (!navigator.geolocation) { showToast('GPS not available', true); return; }
+  norwState.gpsPoints = [];
+  norwState.lastPosition = null;
+  norwState.gpsWatchId = navigator.geolocation.watchPosition(
+    norwOnGPSPosition,
+    (err) => console.warn('GPS error:', err.message),
+    { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
+  );
+}
+
+function norwStopGPS() {
+  if (norwState.gpsWatchId !== null) {
+    navigator.geolocation.clearWatch(norwState.gpsWatchId);
+    norwState.gpsWatchId = null;
+  }
+}
+
+function norwOnGPSPosition(pos) {
+  const { latitude, longitude, altitude, accuracy } = pos.coords;
+  if (accuracy > 20) return;
+  const point = { lat: latitude, lon: longitude, alt: altitude, time: Date.now(), accuracy };
+  norwState.gpsPoints.push(point);
+  if (norwState.lastPosition && norwState.currentInterval) {
+    const dist = haversine(norwState.lastPosition.lat, norwState.lastPosition.lon, latitude, longitude);
+    norwState.currentInterval.distance += dist;
+    if (altitude !== null && norwState.lastPosition.alt !== null) {
+      const elevDiff = altitude - norwState.lastPosition.alt;
+      if (elevDiff > 0) norwState.currentInterval.elevGain += elevDiff;
+      else norwState.currentInterval.elevLoss += Math.abs(elevDiff);
+    }
+  }
+  norwState.lastPosition = point;
+  norwUpdateMetrics();
+}
+
+function haversine(lat1, lon1, lat2, lon2) {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLon = (lon2 - lon1) * Math.PI / 180;
+  const a = Math.sin(dLat / 2) ** 2 +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLon / 2) ** 2;
+  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+}
+
+function norwGetTotalDistance() {
+  let total = 0;
+  norwState.intervals.forEach(iv => total += iv.distance);
+  if (norwState.currentInterval) total += norwState.currentInterval.distance;
+  return total;
+}
+
+function norwGetCurrentPace() {
+  const now = Date.now();
+  const recent = norwState.gpsPoints.filter(p => now - p.time < 30000);
+  if (recent.length < 2) return null;
+  const first = recent[0];
+  const last = recent[recent.length - 1];
+  const dist = haversine(first.lat, first.lon, last.lat, last.lon);
+  const timeSec = (last.time - first.time) / 1000;
+  if (dist < 0.005 || timeSec < 5) return null;
+  const paceSecPerKm = timeSec / dist;
+  return paceSecPerKm;
+}
+
+function norwFormatPace(secPerKm) {
+  if (!secPerKm || secPerKm > 3600) return '--:--';
+  const m = Math.floor(secPerKm / 60);
+  const s = Math.floor(secPerKm % 60);
+  return m + ':' + s.toString().padStart(2, '0');
+}
+
+function norwGetTotalElevGain() {
+  let total = 0;
+  norwState.intervals.forEach(iv => total += iv.elevGain);
+  if (norwState.currentInterval) total += norwState.currentInterval.elevGain;
+  return total;
+}
+
+function norwUpdateMetrics() {
+  const distEl = document.getElementById('norw-dist');
+  const paceEl = document.getElementById('norw-pace');
+  const elevEl = document.getElementById('norw-elev');
+  if (distEl) distEl.textContent = norwGetTotalDistance().toFixed(2);
+  if (paceEl) paceEl.textContent = norwFormatPace(norwGetCurrentPace());
+  if (elevEl) elevEl.textContent = Math.round(norwGetTotalElevGain());
+}
+
 // Init
 renderHome();
 </script>
