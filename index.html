@@ -361,6 +361,123 @@ body {
 @media (prefers-color-scheme: light) {
   /* Keep dark — this is a gym app */
 }
+
+/* ===== NORWEGIAN 4x4 ===== */
+.norw-setup { padding: 20px 0; }
+.norw-setup-title { font-size: 20px; font-weight: 800; margin-bottom: 16px; }
+.norw-connect-btn {
+  width: 100%; padding: 16px; background: var(--accent); color: #fff;
+  border: none; border-radius: var(--radius); font-size: 16px; font-weight: 700;
+  cursor: pointer; margin-bottom: 16px; transition: opacity 0.15s;
+}
+.norw-connect-btn:active { opacity: 0.8; }
+.norw-connect-btn.connected { background: var(--green); }
+.norw-connect-btn.connecting { background: var(--orange); }
+.norw-config-card {
+  background: var(--card); border: 1px solid var(--card-border);
+  border-radius: var(--radius); padding: 16px; margin-bottom: 12px;
+}
+.norw-config-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 8px 0;
+}
+.norw-config-row label { font-size: 14px; color: var(--text-dim); }
+.norw-config-row input {
+  width: 70px; padding: 8px; background: var(--surface); border: 1px solid var(--card-border);
+  border-radius: var(--radius-sm); color: var(--text); font-size: 16px; text-align: center;
+  font-weight: 700;
+}
+.norw-start-btn {
+  width: 100%; padding: 18px; background: var(--green); color: #fff;
+  border: none; border-radius: var(--radius); font-size: 18px; font-weight: 800;
+  cursor: pointer; margin-top: 16px; letter-spacing: 0.5px;
+}
+.norw-start-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+/* Running screen */
+.norw-running { text-align: center; padding: 20px 0; min-height: 100vh; display: flex; flex-direction: column; }
+.norw-phase {
+  font-size: 18px; font-weight: 800; letter-spacing: 2px; padding: 8px 24px;
+  border-radius: 8px; display: inline-block; margin-bottom: 8px;
+}
+.norw-phase.work { background: var(--red-dim); color: var(--red); }
+.norw-phase.recover { background: var(--green-dim); color: var(--green); }
+.norw-countdown {
+  font-size: 72px; font-weight: 800; font-family: 'SF Mono', 'JetBrains Mono', monospace;
+  letter-spacing: -2px; margin: 8px 0;
+}
+.norw-hr-display { font-size: 64px; font-weight: 800; margin: 4px 0; }
+.norw-hr-display .bpm-label { font-size: 18px; font-weight: 600; color: var(--text-dim); }
+.norw-zone-badge {
+  display: inline-block; padding: 4px 14px; border-radius: 8px;
+  font-size: 14px; font-weight: 700; margin-bottom: 12px;
+}
+.norw-zone-badge.target { background: var(--green-dim); color: var(--green); }
+.norw-zone-badge.above { background: var(--red-dim); color: var(--red); }
+.norw-zone-badge.below { background: var(--orange-dim); color: var(--orange); }
+.norw-cycle { font-size: 14px; color: var(--text-dim); font-weight: 600; margin-bottom: 12px; }
+.norw-metrics {
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;
+  margin-top: auto; padding: 12px 0;
+}
+.norw-metric {
+  background: var(--card); border: 1px solid var(--card-border);
+  border-radius: var(--radius-sm); padding: 12px 8px; text-align: center;
+}
+.norw-metric-val { font-size: 20px; font-weight: 800; }
+.norw-metric-label { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+.norw-stop-btn {
+  width: 100%; padding: 14px; background: var(--red); color: #fff;
+  border: none; border-radius: var(--radius); font-size: 16px; font-weight: 700;
+  cursor: pointer; margin-top: 12px;
+}
+.norw-bt-warning {
+  background: var(--orange-dim); color: var(--orange); padding: 8px 16px;
+  border-radius: 8px; font-size: 13px; font-weight: 600; margin-bottom: 8px;
+  cursor: pointer; display: none;
+}
+.norw-flash { animation: norw-flash-anim 0.5s ease-out; }
+@keyframes norw-flash-anim {
+  0% { opacity: 0.3; } 100% { opacity: 1; }
+}
+
+/* Summary — Norwegian-specific */
+.norw-summary-header { text-align: center; padding: 24px 0 16px; }
+.norw-summary-header h2 { font-size: 22px; font-weight: 800; }
+.norw-interval-card {
+  background: var(--card); border: 1px solid var(--card-border);
+  border-radius: var(--radius); padding: 14px; margin-bottom: 10px;
+}
+.norw-interval-card.work { border-left: 4px solid var(--red); }
+.norw-interval-card.recovery { border-left: 4px solid var(--green); }
+.norw-interval-header {
+  display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;
+}
+.norw-interval-phase { font-size: 13px; font-weight: 700; letter-spacing: 0.5px; }
+.norw-interval-grid {
+  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px;
+}
+.norw-interval-stat { font-size: 12px; color: var(--text-dim); }
+.norw-interval-stat span { display: block; font-size: 16px; font-weight: 700; color: var(--text); }
+.norw-zone-bar {
+  display: flex; height: 24px; border-radius: 6px; overflow: hidden; margin: 16px 0;
+}
+.norw-zone-bar div { transition: width 0.3s; }
+.norw-totals {
+  background: var(--card); border: 1px solid var(--card-border);
+  border-radius: var(--radius); padding: 16px; margin-bottom: 16px;
+}
+.norw-totals-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+}
+.norw-totals-grid .norw-interval-stat span { font-size: 18px; }
+.norw-export-btns { display: flex; gap: 10px; margin-top: 16px; }
+.norw-export-btn {
+  flex: 1; padding: 14px; background: var(--card); border: 1px solid var(--card-border);
+  border-radius: var(--radius); color: var(--text); font-size: 14px; font-weight: 600;
+  cursor: pointer; text-align: center;
+}
+.norw-export-btn:active { background: var(--surface); }
 </style>
 </head>
 <body>
