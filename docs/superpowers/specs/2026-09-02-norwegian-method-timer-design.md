@@ -23,6 +23,7 @@ A new "Norwegian 4x4" screen in `index.html` that connects to the Polar H10 via 
    - Target zone indicator (in target / above / below)
    - Cycle progress ("Cycle 2 of 4")
    - Distance (km) + current pace (min/km)
+   - Elevation (m) + total gain
 4. **Summary screen** — Per-interval cards, zone time breakdown, totals. Auto-syncs to Supabase. Export buttons for CSV/JSON.
 
 ## Technical Design
@@ -42,6 +43,7 @@ A new "Norwegian 4x4" screen in `index.html` that connects to the Polar H10 via 
 - Filter out points with accuracy > 20m to avoid GPS jumps
 - Current pace: rolling window of last ~30 seconds of GPS points
 - Per-interval distance and pace tracked separately
+- **Elevation:** `coords.altitude` from the Geolocation API (available on Pixel 7 with GPS). Track elevation per GPS point, calculate total elevation gain/loss per interval and for the session. Display current elevation on the running screen.
 
 ### Timer
 
@@ -109,7 +111,8 @@ Session object stored in localStorage and synced to Supabase:
       "duration": 240,
       "hr": { "avg": 158, "min": 145, "max": 165, "samples": [145, 148, ...] },
       "distance_km": 0.82,
-      "pace_avg": "5:12"
+      "pace_avg": "5:12",
+      "elevation": { "gain_m": 12, "loss_m": 3 }
     },
     {
       "phase": "recovery",
@@ -117,7 +120,8 @@ Session object stored in localStorage and synced to Supabase:
       "duration": 180,
       "hr": { "avg": 135, "min": 128, "max": 142, "samples": [142, 140, ...] },
       "distance_km": 0.45,
-      "pace_avg": "6:40"
+      "pace_avg": "6:40",
+      "elevation": { "gain_m": 2, "loss_m": 8 }
     }
   ],
   "totals": {
@@ -131,7 +135,8 @@ Session object stored in localStorage and synced to Supabase:
       "z3": 180,
       "z4": 840,
       "z5": 40
-    }
+    },
+    "elevation": { "gain_m": 58, "loss_m": 52 }
   }
 }
 ```
@@ -161,7 +166,7 @@ Uses existing `sbHeaders()` and Supabase constants. May need a `norwegian` JSONB
 
 ### Export
 
-- **CSV:** One row per interval — columns: cycle, phase, duration, avg_hr, min_hr, max_hr, distance_km, pace. Uses `Blob` + download link.
+- **CSV:** One row per interval — columns: cycle, phase, duration, avg_hr, min_hr, max_hr, distance_km, pace, elevation_gain_m, elevation_loss_m. Uses `Blob` + download link.
 - **JSON:** Full session object via existing `downloadJSON()` helper.
 - Both available as buttons on the summary screen. Supabase sync is automatic.
 
