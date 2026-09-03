@@ -638,6 +638,7 @@ body {
     <div class="norw-countdown" id="norw-countdown">4:00</div>
     <div class="norw-hr-display" id="norw-hr">---<span class="bpm-label"> bpm</span></div>
     <div class="norw-zone-badge" id="norw-zone-badge">--</div>
+    <div id="norw-target-range" style="font-size:13px;color:var(--text-dim);font-weight:600;margin-bottom:12px;"></div>
     <div class="norw-cycle" id="norw-cycle">Cycle 1 of 4</div>
     <div class="norw-metrics">
       <div class="norw-metric">
@@ -666,6 +667,10 @@ body {
     <div id="norw-sync-status" style="margin-top:8px;font-size:11px;font-family:'JetBrains Mono','SF Mono',monospace;letter-spacing:0.3px;"></div>
   </div>
   <div id="norw-sum-intervals"></div>
+  <div style="font-size:13px;font-weight:700;color:var(--text-dim);margin:16px 0 8px;letter-spacing:0.5px;">HR &amp; PACE</div>
+  <div style="background:var(--card);border:1px solid var(--card-border);border-radius:var(--radius);padding:12px;margin-bottom:16px;">
+    <canvas id="norw-graph" width="600" height="220" style="width:100%;height:auto;"></canvas>
+  </div>
   <div style="font-size:13px;font-weight:700;color:var(--text-dim);margin:16px 0 8px;letter-spacing:0.5px;">ZONE TIME</div>
   <div class="norw-zone-bar" id="norw-zone-bar"></div>
   <div class="norw-totals" id="norw-sum-totals"></div>
@@ -1957,12 +1962,17 @@ const norwState = {
   currentCycle: 1,
   secondsLeft: 240,
   running: false,
+  phaseStartTime: null,
+  phaseDuration: 240,
+  warned10s: false,
   // Wake lock
   wakeLock: null,
   // Session data
   startTime: null,
   intervals: [],
   currentInterval: null,
+  hrTimeline: [],    // {t: seconds since start, hr: bpm}
+  paceTimeline: [],  // {t: seconds since start, pace: sec/km}
   // Audio
   audioCtx: null,
 };
@@ -2038,6 +2048,7 @@ function norwOnHRValue(event) {
   norwState.currentHR = hr;
   if (norwState.running && norwState.currentInterval) {
     norwState.currentInterval.hrSamples.push(hr);
+    norwState.hrTimeline.push({ t: (Date.now() - norwState.startTime) / 1000, hr });
   }
   const hrEl = document.getElementById('norw-hr');
   if (hrEl && norwState.running) {
@@ -2122,6 +2133,11 @@ function norwOnGPSPosition(pos) {
     }
   }
   norwState.lastPosition = point;
+  // Track pace for summary graph
+  const pace = norwGetCurrentPace();
+  if (pace && pace < 1200) { // ignore > 20 min/km
+    norwState.paceTimeline.push({ t: (Date.now() - norwState.startTime) / 1000, pace });
+  }
   norwUpdateMetrics();
 }
 
@@ -2228,10 +2244,15 @@ function norwStart() {
 
   norwState.phase = 'work';
   norwState.currentCycle = 1;
+  norwState.phaseDuration = norwState.workDuration;
+  norwState.phaseStartTime = Date.now();
   norwState.secondsLeft = norwState.workDuration;
+  norwState.warned10s = false;
   norwState.running = true;
   norwState.startTime = Date.now();
   norwState.intervals = [];
+  norwState.hrTimeline = [];
+  norwState.paceTimeline = [];
   norwState.currentInterval = norwNewInterval('work', 1);
 
   norwGetAudioCtx().resume();
@@ -2263,9 +2284,13 @@ function norwNewInterval(phase, cycle) {
 
 function norwTick() {
   if (!norwState.running) return;
-  norwState.secondsLeft--;
+  // Wall-clock elapsed time — survives screen lock / background throttling
+  const elapsed = Math.floor((Date.now() - norwState.phaseStartTime) / 1000);
+  norwState.secondsLeft = Math.max(0, norwState.phaseDuration - elapsed);
 
-  if (norwState.secondsLeft === 10) {
+  // 10-second warning (fire once per phase)
+  if (norwState.secondsLeft <= 10 && norwState.secondsLeft > 0 && !norwState.warned10s) {
+    norwState.warned10s = true;
     norwPlayWarning();
     norwVibrate([100]);
   }
@@ -2285,7 +2310,10 @@ function norwFinishInterval() {
 
   if (norwState.phase === 'work') {
     norwState.phase = 'recovery';
+    norwState.phaseDuration = norwState.recoveryDuration;
+    norwState.phaseStartTime = Date.now();
     norwState.secondsLeft = norwState.recoveryDuration;
+    norwState.warned10s = false;
     norwState.currentInterval = norwNewInterval('recovery', norwState.currentCycle);
     norwPlayRecover();
     norwVibrate([200, 100, 200]);
@@ -2296,7 +2324,10 @@ function norwFinishInterval() {
     }
     norwState.currentCycle++;
     norwState.phase = 'work';
+    norwState.phaseDuration = norwState.workDuration;
+    norwState.phaseStartTime = Date.now();
     norwState.secondsLeft = norwState.workDuration;
+    norwState.warned10s = false;
     norwState.currentInterval = norwNewInterval('work', norwState.currentCycle);
     norwPlayGo();
     norwVibrate([200, 100, 200]);
@@ -2351,6 +2382,15 @@ function norwRenderRunning() {
   }
   if (cycleEl) {
     cycleEl.textContent = `Cycle ${norwState.currentCycle} of ${norwState.cycles}`;
+  }
+  // Target HR range
+  const rangeEl = document.getElementById('norw-target-range');
+  if (rangeEl) {
+    const target = norwGetTargetZone();
+    const bounds = norwGetZoneBounds(norwState.restingHR);
+    const range = bounds[target - 1];
+    const label = norwState.phase === 'work' ? 'Work target' : 'Recovery target';
+    rangeEl.textContent = `${label}: Z${target} (${range.lo}–${range.hi} bpm)`;
   }
   norwUpdateMetrics();
 }
@@ -2437,6 +2477,8 @@ function norwBuildSession() {
       time_in_zone_seconds: zoneTime,
       elevation: { gain_m: Math.round(totalElevGain), loss_m: Math.round(totalElevLoss) },
     },
+    hrTimeline: norwState.hrTimeline,
+    paceTimeline: norwState.paceTimeline,
   };
 }
 
@@ -2507,6 +2549,127 @@ function norwRenderSummary() {
         <div class="norw-interval-stat">↓ Elevation<span>${t.elevation.loss_m} m</span></div>
       </div>
     `;
+  }
+
+  // Render HR & Pace graph (deferred to allow canvas to be visible)
+  setTimeout(() => norwRenderGraph(session), 50);
+}
+
+// ── Session Graph ─────────────────────────────────────────────
+function norwRenderGraph(session) {
+  const canvas = document.getElementById('norw-graph');
+  if (!canvas || !session.hrTimeline || session.hrTimeline.length < 2) return;
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const rect = canvas.getBoundingClientRect();
+  canvas.width = rect.width * dpr;
+  canvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  const W = rect.width;
+  const H = rect.height;
+  const PAD_L = 40, PAD_R = 40, PAD_T = 12, PAD_B = 24;
+  const plotW = W - PAD_L - PAD_R;
+  const plotH = H - PAD_T - PAD_B;
+
+  const hrData = session.hrTimeline;
+  const paceData = session.paceTimeline || [];
+  const maxT = Math.max(hrData[hrData.length - 1].t, paceData.length ? paceData[paceData.length - 1].t : 0);
+
+  // HR axis: 80 to max HR + 10
+  const hrMin = 80;
+  const hrMax = Math.max(NORW_MAX_HR + 5, Math.max(...hrData.map(d => d.hr)) + 5);
+  // Pace axis: 3:00 to 10:00 min/km (180 to 600 sec/km)
+  const paceMin = 180;
+  const paceMax = 600;
+
+  const xOf = (t) => PAD_L + (t / maxT) * plotW;
+  const yHR = (hr) => PAD_T + plotH - ((hr - hrMin) / (hrMax - hrMin)) * plotH;
+  const yPace = (p) => PAD_T + plotH - ((paceMax - p) / (paceMax - paceMin)) * plotH; // inverted — lower pace = higher on chart
+
+  // Background — shade work/recovery intervals
+  const intervals = session.intervals || [];
+  let tOffset = 0;
+  intervals.forEach(iv => {
+    const x1 = xOf(tOffset);
+    const x2 = xOf(tOffset + iv.duration);
+    ctx.fillStyle = iv.phase === 'work' ? 'rgba(231,76,60,0.08)' : 'rgba(46,204,113,0.08)';
+    ctx.fillRect(x1, PAD_T, x2 - x1, plotH);
+    tOffset += iv.duration;
+  });
+
+  // Zone target bands
+  const bounds = norwGetZoneBounds(session.config.restingHR);
+  // Z4 band (work target)
+  const z4 = bounds[3];
+  ctx.fillStyle = 'rgba(230,126,34,0.12)';
+  ctx.fillRect(PAD_L, yHR(z4.hi), plotW, yHR(z4.lo) - yHR(z4.hi));
+  // Z2 band (recovery target)
+  const z2 = bounds[1];
+  ctx.fillStyle = 'rgba(46,204,113,0.12)';
+  ctx.fillRect(PAD_L, yHR(z2.hi), plotW, yHR(z2.lo) - yHR(z2.hi));
+
+  // Grid lines + labels — HR axis (left)
+  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
+  ctx.fillStyle = 'rgba(255,255,255,0.4)';
+  ctx.font = '10px system-ui';
+  ctx.textAlign = 'right';
+  for (let hr = 100; hr <= hrMax; hr += 20) {
+    const y = yHR(hr);
+    if (y < PAD_T || y > PAD_T + plotH) continue;
+    ctx.beginPath(); ctx.moveTo(PAD_L, y); ctx.lineTo(PAD_L + plotW, y); ctx.stroke();
+    ctx.fillText(hr + '', PAD_L - 4, y + 3);
+  }
+
+  // Pace axis labels (right)
+  ctx.textAlign = 'left';
+  for (let p = 240; p <= 540; p += 60) {
+    const y = yPace(p);
+    if (y < PAD_T || y > PAD_T + plotH) continue;
+    ctx.fillText(Math.floor(p / 60) + ':' + (p % 60).toString().padStart(2, '0'), PAD_L + plotW + 4, y + 3);
+  }
+
+  // Time axis labels
+  ctx.textAlign = 'center';
+  const timeStep = maxT > 1200 ? 300 : 120;
+  for (let t = timeStep; t < maxT; t += timeStep) {
+    const x = xOf(t);
+    ctx.fillText(Math.floor(t / 60) + 'min', x, PAD_T + plotH + 16);
+  }
+
+  // Draw pace line (behind HR)
+  if (paceData.length > 1) {
+    ctx.beginPath();
+    ctx.strokeStyle = '#3498db';
+    ctx.lineWidth = 1.5;
+    ctx.globalAlpha = 0.7;
+    paceData.forEach((d, i) => {
+      const x = xOf(d.t);
+      const y = yPace(Math.max(paceMin, Math.min(paceMax, d.pace)));
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+    ctx.globalAlpha = 1;
+  }
+
+  // Draw HR line
+  ctx.beginPath();
+  ctx.strokeStyle = '#e74c3c';
+  ctx.lineWidth = 2;
+  hrData.forEach((d, i) => {
+    const x = xOf(d.t);
+    const y = yHR(Math.max(hrMin, Math.min(hrMax, d.hr)));
+    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+  });
+  ctx.stroke();
+
+  // Legend
+  ctx.font = '11px system-ui';
+  ctx.fillStyle = '#e74c3c';
+  ctx.textAlign = 'left';
+  ctx.fillText('● HR', PAD_L + 4, PAD_T + 12);
+  if (paceData.length > 1) {
+    ctx.fillStyle = '#3498db';
+    ctx.fillText('● Pace', PAD_L + 44, PAD_T + 12);
   }
 }
 
