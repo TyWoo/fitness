@@ -592,10 +592,11 @@ body {
   </div>
   <div id="deload-link"></div>
   <div class="home-bottom">
-    <div class="home-btn" onclick="showScreen('history')">📊 History</div>
-    <div class="home-btn" onclick="window.location.href='food.html'">🍽️ Food Log</div>
-    <div class="home-btn" onclick="window.location.href='dashboard.html'">⊞ Dashboard</div>
-    <div class="home-btn" onclick="exportAll()">📤 Export JSON</div>
+    <div class="home-btn" onclick="showScreen('hyrox-week')">HYROX</div>
+    <div class="home-btn" onclick="showScreen('history')">History</div>
+    <div class="home-btn" onclick="window.location.href='food.html'">Food</div>
+    <div class="home-btn" onclick="window.location.href='dashboard.html'">Dash</div>
+    <div class="home-btn" onclick="exportAll()">Export</div>
   </div>
 </div>
 
@@ -1274,6 +1275,13 @@ function renderHome() {
   deloadLink.innerHTML = state.deloadActive
     ? ''
     : `<div class="deload-start-link" onclick="setDeload(true)">Start Deload Week</div>`;
+
+  // HYROX Program card
+  var hyroxCardEl = document.createElement('div');
+  hyroxCardEl.innerHTML = hyroxRenderHomeCard();
+  if (hyroxCardEl.innerHTML) {
+    document.getElementById('deload-banner').after(hyroxCardEl);
+  }
 
   // Render flexible/makeup templates below weekly schedule
   const flexTemplates = TEMPLATES.filter(t => t.isFlexible);
@@ -1959,6 +1967,10 @@ function showScreen(id) {
   window.scrollTo(0, 0);
   if (id === 'home') renderHome();
   if (id === 'history') renderHistory();
+  if (id === 'hyrox-setup') hyroxRenderSetup();
+  if (id === 'hyrox-week') hyroxRenderWeek();
+  if (id === 'hyrox-plan') hyroxRenderPlan();
+  if (id === 'hyrox-benchmarks') hyroxRenderBenchmarks();
 }
 
 function cleanup() {
@@ -3022,6 +3034,38 @@ async function hyroxAddBenchmark() {
   hyroxRenderBenchmarks();
 }
 
+// ── Home Integration ──────────────────────────────────────────
+
+function hyroxRenderHomeCard() {
+  var todaySession = hyroxGetToday();
+  if (todaySession && todaySession.template_id !== 'rest') {
+    var r = todaySession.resolved;
+    return '<div class="hyrox-home-card" onclick="hyroxShowDaySession(\'' + todaySession.date_local + '\')">' +
+      '<div class="session-type" style="color:' + r.color + '">' + todaySession.phase.replace('_', ' ') + ' - HYROX Program</div>' +
+      '<div class="session-name">' + r.name + '</div>' +
+      '<div class="session-meta">' + (r.duration ? '~' + r.duration + ' min' : '') + ' - Tap to view</div></div>';
+  }
+  if (hyroxProfile && hyroxPlan.length) {
+    return '<div class="hyrox-home-card" onclick="showScreen(\'hyrox-week\')" style="border-color:var(--text-muted);">' +
+      '<div class="session-type" style="color:var(--text-dim)">HYROX Program</div>' +
+      '<div class="session-name" style="font-size:14px;color:var(--text-dim);">Rest day - View week</div></div>';
+  }
+  if (!hyroxProfile) {
+    return '<div style="text-align:center;margin-bottom:12px;"><div style="font-size:12px;color:var(--text-muted);cursor:pointer;text-decoration:underline;" onclick="showScreen(\'hyrox-setup\')">Set up HYROX program</div></div>';
+  }
+  return '';
+}
+
+function hyroxInit() {
+  hyroxLoadLocal();
+  hyroxFetchProfile().then(function() {
+    if (hyroxProfile) {
+      hyroxFetchPlan();
+      hyroxFetchBenchmarks();
+    }
+  });
+}
+
 // ============================================================
 // NORWEGIAN 4x4
 // ============================================================
@@ -3395,6 +3439,7 @@ function norwCleanup() {
 }
 
 // Init
+hyroxInit();
 renderHome();
 </script>
 </body>
