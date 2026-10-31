@@ -2038,6 +2038,489 @@ window.addEventListener('beforeunload', (e) => {
 });
 
 // ============================================================
+// HYROX PROGRAM
+// ============================================================
+
+// ── Shared Helpers ────────────────────────────────────────────
+
+function hyroxHrZones(maxHr, restingHr) {
+  const hrr = maxHr - restingHr;
+  return {
+    z1: { min: Math.round(restingHr + hrr * 0.50), max: Math.round(restingHr + hrr * 0.60) },
+    z2: { min: Math.round(restingHr + hrr * 0.60), max: Math.round(restingHr + hrr * 0.70) },
+    z3: { min: Math.round(restingHr + hrr * 0.70), max: Math.round(restingHr + hrr * 0.80) },
+    z4: { min: Math.round(restingHr + hrr * 0.80), max: Math.round(restingHr + hrr * 0.90) },
+    z5: { min: Math.round(restingHr + hrr * 0.90), max: maxHr },
+  };
+}
+
+function hyroxMafHr(birthYear) {
+  const age = new Date().getFullYear() - birthYear;
+  return 180 - age;
+}
+
+function hyroxRunPaces(fiveKSeconds, multipliers = {}) {
+  const base = fiveKSeconds / 5;
+  const m = Object.assign({
+    easy_low: 1.25, easy_high: 1.35,
+    tempo: 1.10,
+    threshold_low: 1.04, threshold_high: 1.06,
+    fiveK: 1.0,
+    strides: 0.93,
+  }, multipliers);
+  return {
+    easy:      { min: Math.round(base * m.easy_low), max: Math.round(base * m.easy_high) },
+    tempo:     Math.round(base * m.tempo),
+    threshold: { min: Math.round(base * m.threshold_low), max: Math.round(base * m.threshold_high) },
+    fiveK:     Math.round(base * m.fiveK),
+    strides:   Math.round(base * m.strides),
+  };
+}
+
+function hyroxErgPaces(twoKSeconds) {
+  const base = twoKSeconds / 4;
+  return {
+    easy:      { min: Math.round(base + 18), max: Math.round(base + 22) },
+    steady:    Math.round(base + 12),
+    threshold: { min: Math.round(base + 6), max: Math.round(base + 8) },
+    hard:      { min: Math.round(base + 3), max: Math.round(base + 5) },
+  };
+}
+
+function formatHyroxPace(seconds) {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return m + ':' + s.toString().padStart(2, '0');
+}
+
+function formatPaceRange(obj) {
+  if (typeof obj === 'number') return formatHyroxPace(obj);
+  return formatHyroxPace(obj.min) + '-' + formatHyroxPace(obj.max);
+}
+
+function hyroxResolveTargets(profile, templateBlock) {
+  const target = templateBlock.target || {};
+  const result = {};
+
+  if (target.zone && profile.max_hr && profile.resting_hr) {
+    const zones = hyroxHrZones(profile.max_hr, profile.resting_hr);
+    const z = zones[target.zone];
+    if (z) result.hr = z;
+  }
+
+  if (target.maf && profile.birth_year) {
+    result.mafHr = hyroxMafHr(profile.birth_year);
+  }
+
+  if (target.runPace && profile.run_5k_seconds) {
+    const paces = hyroxRunPaces(profile.run_5k_seconds, profile.pace_multipliers);
+    result.runPace = paces[target.runPace];
+    result.runPaceLabel = target.runPace;
+  }
+
+  if (target.ergPace) {
+    const seconds = target.ergType === 'ski' ? profile.ski_2k_seconds : profile.row_2k_seconds;
+    if (seconds) {
+      const paces = hyroxErgPaces(seconds);
+      result.ergPace = paces[target.ergPace];
+      result.ergPaceLabel = target.ergPace;
+    }
+  }
+
+  if (target.rpe) result.rpe = target.rpe;
+
+  return result;
+}
+
+function parsePaceToSeconds(str) {
+  if (!str) return null;
+  const parts = str.split(':').map(Number);
+  if (parts.length === 2) return parts[0] * 60 + parts[1];
+  if (parts.length === 3) return parts[0] * 3600 + parts[1] * 60 + parts[2];
+  return null;
+}
+
+function formatDuration(totalSeconds) {
+  const h = Math.floor(totalSeconds / 3600);
+  const m = Math.floor((totalSeconds % 3600) / 60);
+  const s = totalSeconds % 60;
+  return h + ':' + m.toString().padStart(2, '0') + ':' + s.toString().padStart(2, '0');
+}
+
+// ── Profile State ─────────────────────────────────────────────
+
+let hyroxProfile = null;
+let hyroxPlan = [];
+let hyroxBenchmarks = [];
+
+const HYROX_LS_PROFILE = 'hyrox_profile';
+const HYROX_LS_PLAN = 'hyrox_plan';
+const HYROX_LS_BENCHMARKS = 'hyrox_benchmarks';
+
+function hyroxSaveLocal() {
+  if (hyroxProfile) localStorage.setItem(HYROX_LS_PROFILE, JSON.stringify(hyroxProfile));
+  if (hyroxPlan.length) localStorage.setItem(HYROX_LS_PLAN, JSON.stringify(hyroxPlan));
+  if (hyroxBenchmarks.length) localStorage.setItem(HYROX_LS_BENCHMARKS, JSON.stringify(hyroxBenchmarks));
+}
+
+function hyroxLoadLocal() {
+  try { hyroxProfile = JSON.parse(localStorage.getItem(HYROX_LS_PROFILE)); } catch(e) {}
+  try { hyroxPlan = JSON.parse(localStorage.getItem(HYROX_LS_PLAN)) || []; } catch(e) { hyroxPlan = []; }
+  try { hyroxBenchmarks = JSON.parse(localStorage.getItem(HYROX_LS_BENCHMARKS)) || []; } catch(e) { hyroxBenchmarks = []; }
+}
+
+async function hyroxFetchProfile() {
+  try {
+    const res = await fetch(`${SB_URL}/hyrox_profile?select=*&limit=1`, { headers: sbHeaders() });
+    if (!res.ok) return null;
+    const rows = await res.json();
+    if (rows.length) {
+      hyroxProfile = rows[0];
+      hyroxSaveLocal();
+    }
+    return hyroxProfile;
+  } catch(e) { console.error('hyrox profile fetch:', e); return null; }
+}
+
+async function hyroxSaveProfile(data) {
+  const method = hyroxProfile?.id ? 'PATCH' : 'POST';
+  const url = hyroxProfile?.id
+    ? `${SB_URL}/hyrox_profile?id=eq.${hyroxProfile.id}`
+    : `${SB_URL}/hyrox_profile`;
+  data.updated_at = new Date().toISOString();
+
+  try {
+    const res = await fetch(url, {
+      method,
+      headers: sbHeaders({ 'Prefer': 'return=representation' }),
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) { console.error('save profile:', await res.text()); return false; }
+    const rows = await res.json();
+    hyroxProfile = Array.isArray(rows) ? rows[0] : rows;
+    hyroxSaveLocal();
+    return true;
+  } catch(e) { console.error('save profile:', e); return false; }
+}
+
+async function hyroxFetchPlan() {
+  try {
+    const res = await fetch(`${SB_URL}/hyrox_planned_sessions?select=*&order=date_local.asc`, { headers: sbHeaders() });
+    if (!res.ok) return;
+    hyroxPlan = await res.json();
+    hyroxSaveLocal();
+  } catch(e) { console.error('hyrox plan fetch:', e); }
+}
+
+async function hyroxSavePlanToSupabase(sessions) {
+  const today = new Date().toISOString().slice(0, 10);
+  try {
+    await fetch(`${SB_URL}/hyrox_planned_sessions?status=eq.planned&date_local=gte.${today}`, {
+      method: 'DELETE',
+      headers: sbHeaders(),
+    });
+    if (sessions.length) {
+      const res = await fetch(`${SB_URL}/hyrox_planned_sessions`, {
+        method: 'POST',
+        headers: sbHeaders({ 'Prefer': 'return=minimal' }),
+        body: JSON.stringify(sessions),
+      });
+      if (!res.ok) console.error('save plan:', await res.text());
+    }
+  } catch(e) { console.error('save plan:', e); }
+}
+
+async function hyroxUpdateSessionStatus(sessionId, status, extras = {}) {
+  const body = { status, ...extras };
+  try {
+    await fetch(`${SB_URL}/hyrox_planned_sessions?id=eq.${sessionId}`, {
+      method: 'PATCH',
+      headers: sbHeaders({ 'Prefer': 'return=minimal' }),
+      body: JSON.stringify(body),
+    });
+    const s = hyroxPlan.find(p => p.id === sessionId);
+    if (s) Object.assign(s, body);
+    hyroxSaveLocal();
+  } catch(e) { console.error('update session:', e); }
+}
+
+async function hyroxFetchBenchmarks() {
+  try {
+    const res = await fetch(`${SB_URL}/hyrox_benchmarks?select=*&order=date_local.desc`, { headers: sbHeaders() });
+    if (!res.ok) return;
+    hyroxBenchmarks = await res.json();
+    hyroxSaveLocal();
+  } catch(e) { console.error('hyrox benchmarks fetch:', e); }
+}
+
+async function hyroxSaveBenchmark(data) {
+  try {
+    const res = await fetch(`${SB_URL}/hyrox_benchmarks`, {
+      method: 'POST',
+      headers: sbHeaders({ 'Prefer': 'return=representation' }),
+      body: JSON.stringify(data),
+    });
+    if (!res.ok) { console.error('save benchmark:', await res.text()); return false; }
+    const rows = await res.json();
+    hyroxBenchmarks.unshift(Array.isArray(rows) ? rows[0] : rows);
+    hyroxSaveLocal();
+    return true;
+  } catch(e) { console.error('save benchmark:', e); return false; }
+}
+
+// ── Setup Screen ──────────────────────────────────────────────
+
+function hyroxRenderSetup() {
+  const p = hyroxProfile || {};
+  const eq = p.equipment || {};
+  const container = document.getElementById('hyrox-setup-form');
+
+  container.innerHTML = `
+    <div class="hyrox-setup-card">
+      <label>Race Date</label>
+      <input type="date" id="hyrox-race-date" value="${p.race_date || ''}">
+    </div>
+
+    <div class="hyrox-setup-card">
+      <label>Division</label>
+      <select id="hyrox-division">
+        <option value="open_singles" ${p.division === 'open_singles' ? 'selected' : ''}>Open Singles</option>
+        <option value="pro_singles" ${p.division === 'pro_singles' ? 'selected' : ''}>Pro Singles</option>
+        <option value="open_doubles" ${p.division === 'open_doubles' ? 'selected' : ''}>Open Doubles</option>
+        <option value="pro_doubles" ${p.division === 'pro_doubles' ? 'selected' : ''}>Pro Doubles</option>
+      </select>
+    </div>
+
+    <div class="hyrox-setup-card">
+      <div class="row">
+        <div>
+          <label>Max HR (bpm)</label>
+          <input type="number" id="hyrox-max-hr" value="${p.max_hr || ''}" placeholder="178">
+        </div>
+        <div>
+          <label>Resting HR (bpm)</label>
+          <input type="number" id="hyrox-resting-hr" value="${p.resting_hr || ''}" placeholder="60">
+        </div>
+      </div>
+    </div>
+
+    <div class="hyrox-setup-card">
+      <label>Birth Year</label>
+      <input type="number" id="hyrox-birth-year" value="${p.birth_year || ''}" placeholder="1990">
+    </div>
+
+    <div class="hyrox-setup-card">
+      <label>5K Time (mm:ss)</label>
+      <input type="text" id="hyrox-5k-time" value="${p.run_5k_seconds ? formatHyroxPace(p.run_5k_seconds) : ''}" placeholder="22:30" inputmode="numeric">
+    </div>
+
+    <div class="hyrox-setup-card">
+      <div class="row">
+        <div>
+          <label>2K Row (mm:ss)</label>
+          <input type="text" id="hyrox-row-2k" value="${p.row_2k_seconds ? formatHyroxPace(p.row_2k_seconds) : ''}" placeholder="7:30" inputmode="numeric">
+        </div>
+        <div>
+          <label>2K Ski (mm:ss)</label>
+          <input type="text" id="hyrox-ski-2k" value="${p.ski_2k_seconds ? formatHyroxPace(p.ski_2k_seconds) : ''}" placeholder="8:00" inputmode="numeric">
+        </div>
+      </div>
+    </div>
+
+    <div class="hyrox-setup-card">
+      <label>Goal Race Time (hh:mm:ss, optional)</label>
+      <input type="text" id="hyrox-goal-time" value="${p.goal_race_seconds ? formatDuration(p.goal_race_seconds) : ''}" placeholder="1:15:00" inputmode="numeric">
+    </div>
+
+    <div class="hyrox-setup-card">
+      <label>Training Days Per Week</label>
+      <select id="hyrox-days">
+        <option value="5" ${p.days_per_week === 5 ? 'selected' : ''}>5</option>
+        <option value="6" ${(p.days_per_week || 6) === 6 ? 'selected' : ''}>6</option>
+      </select>
+    </div>
+
+    <div class="hyrox-setup-card">
+      <label>Available Equipment</label>
+      <div class="hyrox-equip-grid" id="hyrox-equip">
+        ${['sled', 'skierg', 'rower', 'bike', 'wall_ball'].map(k =>
+          '<div class="hyrox-equip-btn ' + (eq[k] ? 'active' : '') + '" data-equip="' + k + '" onclick="hyroxToggleEquip(this)">' + k.replace('_', ' ') + '</div>'
+        ).join('')}
+      </div>
+    </div>
+
+    <button class="start-btn" onclick="hyroxSaveSetup()" style="margin-top:16px;">
+      ${hyroxProfile?.id ? 'Save & Regenerate Plan' : 'Generate Plan'}
+    </button>
+  `;
+}
+
+function hyroxToggleEquip(el) {
+  el.classList.toggle('active');
+}
+
+async function hyroxSaveSetup() {
+  const raceDate = document.getElementById('hyrox-race-date').value;
+  if (!raceDate) { showToast('Race date is required', true); return; }
+
+  const equipment = {};
+  document.querySelectorAll('#hyrox-equip .hyrox-equip-btn').forEach(el => {
+    equipment[el.dataset.equip] = el.classList.contains('active');
+  });
+
+  const data = {
+    race_date: raceDate,
+    division: document.getElementById('hyrox-division').value,
+    birth_year: parseInt(document.getElementById('hyrox-birth-year').value) || null,
+    max_hr: parseInt(document.getElementById('hyrox-max-hr').value) || null,
+    resting_hr: parseInt(document.getElementById('hyrox-resting-hr').value) || null,
+    run_5k_seconds: parsePaceToSeconds(document.getElementById('hyrox-5k-time').value),
+    row_2k_seconds: parsePaceToSeconds(document.getElementById('hyrox-row-2k').value),
+    ski_2k_seconds: parsePaceToSeconds(document.getElementById('hyrox-ski-2k').value),
+    goal_race_seconds: parsePaceToSeconds(document.getElementById('hyrox-goal-time').value),
+    days_per_week: parseInt(document.getElementById('hyrox-days').value),
+    equipment,
+  };
+
+  showToast('Saving...');
+  const ok = await hyroxSaveProfile(data);
+  if (!ok) { showToast('Save failed', true); return; }
+
+  const sessions = hyroxGeneratePlan(hyroxProfile);
+  hyroxPlan = sessions;
+  hyroxSaveLocal();
+  await hyroxSavePlanToSupabase(sessions);
+
+  showToast('Plan generated!');
+  showScreen('hyrox-week');
+}
+
+// ── Session Templates ─────────────────────────────────────────
+
+const HYROX_TEMPLATES = {
+  strength_stations: {
+    id: 'strength_stations', name: 'Strength + Stations',
+    shortName: 'Strength', color: '#e74c3c', duration: 60,
+    intent: 'Build station-specific strength and capacity.',
+    blocks: [
+      { title: 'Main Lift', format: 'sets', movements: ['Back Squat or Deadlift'], target: { zone: 'z3', rpe: 7 },
+        progression: { type: 'load', base_sets: 4, base_reps: 6 } },
+      { title: 'Sled Push', format: 'intervals', movements: ['Sled Push'], target: { zone: 'z4', rpe: 8 },
+        progression: { type: 'volume', base_reps: 4, base_distance: '25m' } },
+      { title: 'Wall Ball', format: 'intervals', movements: ['Wall Ball'], target: { zone: 'z4', rpe: 8 },
+        progression: { type: 'duration', base_seconds: 60, step: 30 } },
+    ],
+  },
+  double_threshold: {
+    id: 'double_threshold', name: 'Double Threshold',
+    shortName: 'Dbl Thresh', color: '#e67e22', duration: 75,
+    intent: 'Two threshold sessions: run AM, ski/row PM. Build Z4 capacity.',
+    blocks: [
+      { title: 'Run Intervals', format: 'intervals', movements: ['Run'], target: { zone: 'z4', runPace: 'threshold', rpe: 8 },
+        progression: { type: 'rep_length', base_distance: '1600m', step: 200, base_reps: 4, rest: '2:00' } },
+      { title: 'Erg Intervals', format: 'intervals', movements: ['SkiErg or Row'], target: { zone: 'z4', ergPace: 'threshold', rpe: 8 },
+        progression: { type: 'rep_length', base_distance: '500m', step: 100, base_reps: 4, rest: '2:00' } },
+    ],
+  },
+  threshold_float: {
+    id: 'threshold_float', name: 'Threshold + Float',
+    shortName: 'Thresh Float', color: '#f39c12', duration: 50,
+    intent: 'Threshold reps with Z2 running between (float = normal running, not a jog).',
+    blocks: [
+      { title: 'Threshold Reps', format: 'intervals', movements: ['Run'], target: { zone: 'z4', runPace: 'threshold', rpe: 8 },
+        progression: { type: 'rep_length', base_distance: '800m', step: 200, base_reps: 5, rest: 'float 3:00 Z2' } },
+    ],
+  },
+  easy_aerobic: {
+    id: 'easy_aerobic', name: 'Easy Aerobic',
+    shortName: 'Easy', color: '#2ecc71', duration: 70,
+    intent: 'Easy effort, any modality. Stay under MAF HR.',
+    blocks: [
+      { title: 'Easy Aerobic', format: 'steady', movements: ['Run, Bike, Row, Ski, or Mix'], target: { zone: 'z2', maf: true, rpe: 4 },
+        progression: { type: 'duration', base_minutes: 60, step: 5, max: 90 } },
+    ],
+  },
+  long_aerobic: {
+    id: 'long_aerobic', name: 'Long Aerobic',
+    shortName: 'Long', color: '#3498db', duration: 90,
+    intent: 'Long Z2 run + optional machine work. Capped at 1.2x longest run in prior 3 weeks.',
+    blocks: [
+      { title: 'Long Run', format: 'steady', movements: ['Run'], target: { zone: 'z2', runPace: 'easy', maf: true, rpe: 4 },
+        progression: { type: 'duration', base_minutes: 50, step: 5, max: 90 } },
+      { title: 'Machine (optional)', format: 'steady', movements: ['Row or Ski'], target: { zone: 'z2', rpe: 4 },
+        progression: { type: 'fixed', minutes: 30 } },
+    ],
+  },
+  aerobic_strength: {
+    id: 'aerobic_strength', name: 'Aerobic Strength / Engine',
+    shortName: 'Aero Str', color: '#9b59b6', duration: 50,
+    intent: 'AMRAP or EMOM at moderate intensity. Build work capacity at RPE 7.',
+    blocks: [
+      { title: 'EMOM / AMRAP', format: 'emom', movements: ['KB Swings, Burpees, Box Jumps, Row Cal'], target: { zone: 'z3', rpe: 7 },
+        progression: { type: 'rounds', base_rounds: 4, step: 1 } },
+    ],
+  },
+  compromised: {
+    id: 'compromised', name: 'Compromised Session',
+    shortName: 'Compromised', color: '#c0392b', duration: 60,
+    intent: 'Run + station combos. Practice running on tired legs.',
+    blocks: [
+      { title: 'Run + Station Combos', format: 'for_time', movements: ['Run', 'Station Work'],
+        target: { zone: 'z4', runPace: 'threshold', rpe: 8 },
+        progression: { type: 'race_volume', base_pct: 0.4, step: 0.1 } },
+    ],
+  },
+  z2_fartlek: {
+    id: 'z2_fartlek', name: 'Z2 Fartlek',
+    shortName: 'Fartlek', color: '#27ae60', duration: 40,
+    intent: '2 min uptempo / 2 min easier, all under MAF HR.',
+    blocks: [
+      { title: 'Fartlek', format: 'intervals', movements: ['Run'],
+        target: { zone: 'z2', maf: true, rpe: 5 },
+        progression: { type: 'duration', base_minutes: 32, step: 3, max: 45 } },
+    ],
+  },
+  running_strength: {
+    id: 'running_strength', name: 'Running Strength',
+    shortName: 'Run Str', color: '#8e44ad', duration: 45,
+    intent: 'Heavy lower-body lift + plyos to support running.',
+    blocks: [
+      { title: 'Main Lift', format: 'sets', movements: ['Back Squat or Trap Bar Deadlift'],
+        target: { rpe: 7 },
+        progression: { type: 'load', base_sets: 4, base_reps: 5 } },
+      { title: 'Plyometrics', format: 'sets', movements: ['Box Jumps, Bounds, Single-leg Hops'],
+        target: { rpe: 7 },
+        progression: { type: 'volume', base_sets: 3, base_reps: 5 } },
+    ],
+  },
+  benchmark: {
+    id: 'benchmark', name: 'Benchmark Test',
+    shortName: 'Test', color: '#f1c40f', duration: 30,
+    intent: 'Max effort test. Result saves to benchmarks and recalculates targets.',
+    blocks: [
+      { title: 'Benchmark', format: 'test', movements: ['Specified test'],
+        target: { rpe: 10 } },
+    ],
+  },
+  rest: {
+    id: 'rest', name: 'Rest Day',
+    shortName: 'Rest', color: '#555', duration: 0,
+    intent: 'Full rest or light walking only.',
+    blocks: [],
+  },
+  simulation: {
+    id: 'simulation', name: 'Race Simulation',
+    shortName: 'Sim', color: '#e74c3c', duration: 75,
+    intent: 'Partial or full race simulation. Practice pacing and transitions.',
+    blocks: [
+      { title: 'Simulation', format: 'for_time', movements: ['Run + All Stations'],
+        target: { zone: 'z4', rpe: 9 },
+        progression: { type: 'race_volume', base_pct: 0.5, step: 0.25 } },
+    ],
+  },
+};
+
+// ============================================================
 // NORWEGIAN 4x4
 // ============================================================
 
