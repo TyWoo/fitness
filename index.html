@@ -2520,6 +2520,508 @@ const HYROX_TEMPLATES = {
   },
 };
 
+// ── Plan Generator ────────────────────────────────────────────
+
+const HYROX_PHASE_COLORS = {
+  base:          '#3498db',
+  build:         '#e67e22',
+  deload:        '#f1c40f',
+  race_specific: '#e74c3c',
+  test:          '#9b59b6',
+  taper:         '#2ecc71',
+};
+
+const HYROX_RACE_PREP = [
+  { week: 12, phase: 'build',         note: 'Max HR ramp + sled push benchmark' },
+  { week: 11, phase: 'build',         note: '' },
+  { week: 10, phase: 'deload',        note: 'Volume -30-40%, keep short fast work' },
+  { week:  9, phase: 'build',         note: '2K ski test' },
+  { week:  8, phase: 'build',         note: 'Sled push retest' },
+  { week:  7, phase: 'deload',        note: 'Less volume, a few high-output efforts' },
+  { week:  6, phase: 'race_specific', note: 'Grip/carry work added' },
+  { week:  5, phase: 'race_specific', note: 'Race-volume split sim' },
+  { week:  4, phase: 'race_specific', note: '' },
+  { week:  3, phase: 'race_specific', note: 'Hard-run split sim' },
+  { week:  2, phase: 'test',          note: 'Half-race simulation, aggressive pacing' },
+  { week:  1, phase: 'taper',         note: 'One short threshold + easy + rest + race' },
+];
+
+function hyroxRacePrepDaySplit(weekToRace, dayOfWeek) {
+  if (weekToRace >= 7) {
+    const map = { 1: 'strength_stations', 2: 'double_threshold', 3: 'easy_aerobic', 4: 'aerobic_strength', 5: 'compromised', 6: 'rest', 0: 'long_aerobic' };
+    return map[dayOfWeek] || 'rest';
+  } else {
+    const map = { 1: 'strength_stations', 2: 'double_threshold', 3: 'easy_aerobic', 4: 'aerobic_strength', 5: 'rest', 6: 'compromised', 0: 'long_aerobic' };
+    return map[dayOfWeek] || 'rest';
+  }
+}
+
+function hyroxBaseDaySplit(dayOfWeek, daysPerWeek) {
+  if (daysPerWeek === 5) {
+    const map = { 1: 'running_strength', 2: 'threshold_float', 3: 'easy_aerobic', 4: 'z2_fartlek', 5: 'rest', 6: 'rest', 0: 'long_aerobic' };
+    return map[dayOfWeek] || 'rest';
+  }
+  const map = { 1: 'running_strength', 2: 'threshold_float', 3: 'easy_aerobic', 4: 'z2_fartlek', 5: 'rest', 6: 'threshold_float', 0: 'long_aerobic' };
+  return map[dayOfWeek] || 'rest';
+}
+
+function hyroxGetMonday(date) {
+  const d = new Date(date);
+  const day = d.getDay();
+  const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+  d.setDate(diff);
+  d.setHours(0, 0, 0, 0);
+  return d;
+}
+
+function hyroxAddDays(date, days) {
+  const d = new Date(date);
+  d.setDate(d.getDate() + days);
+  return d;
+}
+
+function hyroxWeeksBetween(startMonday, endMonday) {
+  return Math.round((endMonday - startMonday) / (7 * 86400000));
+}
+
+function hyroxGeneratePlan(profile) {
+  if (!profile?.race_date) return [];
+
+  const today = new Date();
+  const startMonday = hyroxGetMonday(today);
+  const raceDate = new Date(profile.race_date + 'T00:00:00');
+  const raceMonday = hyroxGetMonday(raceDate);
+  const totalWeeks = hyroxWeeksBetween(startMonday, raceMonday);
+
+  if (totalWeeks <= 0) return [];
+
+  const sessions = [];
+  const daysPerWeek = profile.days_per_week || 6;
+
+  for (let w = 0; w < totalWeeks; w++) {
+    const weekMonday = hyroxAddDays(startMonday, w * 7);
+    const weeksToRace = totalWeeks - w;
+    let phase, note;
+
+    if (weeksToRace <= 12) {
+      const rpEntry = HYROX_RACE_PREP.find(r => r.week === weeksToRace);
+      phase = rpEntry ? rpEntry.phase : 'race_specific';
+      note = rpEntry ? rpEntry.note : '';
+    } else {
+      const posInBlock = (w % 4);
+      phase = posInBlock === 3 ? 'deload' : 'base';
+      note = posInBlock === 3 ? 'Deload: volume -25-30%' : '';
+    }
+
+    const dayOrder = [1, 2, 3, 4, 5, 6, 0];
+    for (const dow of dayOrder) {
+      const dayDate = hyroxAddDays(weekMonday, dow === 0 ? 6 : dow - 1);
+      if (dayDate < today) continue;
+
+      let templateId;
+      if (weeksToRace <= 12) {
+        templateId = hyroxRacePrepDaySplit(weeksToRace, dow);
+      } else {
+        templateId = hyroxBaseDaySplit(dow, daysPerWeek);
+      }
+
+      if (phase === 'deload' && ['double_threshold', 'compromised', 'threshold_float'].includes(templateId)) {
+        templateId = 'easy_aerobic';
+      }
+
+      if (note.includes('Max HR ramp') && dow === 6) templateId = 'benchmark';
+      if (note.includes('2K ski test') && dow === 6) templateId = 'benchmark';
+      if (note.includes('simulation') && dow === 6) templateId = 'simulation';
+
+      const template = HYROX_TEMPLATES[templateId];
+      if (!template) continue;
+
+      const resolvedBlocks = template.blocks.map(block => {
+        const targets = hyroxResolveTargets(profile, block);
+        const deloadFactor = phase === 'deload' ? 0.7 : 1;
+        return { ...block, resolved_targets: targets, deload_factor: deloadFactor };
+      });
+
+      sessions.push({
+        date_local: dayDate.toISOString().slice(0, 10),
+        week_index: w,
+        phase,
+        template_id: templateId,
+        resolved: {
+          name: template.name, shortName: template.shortName,
+          color: template.color, duration: template.duration,
+          intent: template.intent, blocks: resolvedBlocks, note,
+        },
+        status: 'planned',
+      });
+    }
+  }
+
+  return sessions;
+}
+
+// ── Today Screen ──────────────────────────────────────────────
+
+function hyroxGetToday() {
+  const today = new Date().toISOString().slice(0, 10);
+  return hyroxPlan.find(s => s.date_local === today);
+}
+
+function hyroxRenderToday(session) {
+  const container = document.getElementById('hyrox-today-content');
+  if (!session) {
+    container.innerHTML = '<div style="text-align:center;padding:40px 0;"><div style="font-size:40px;margin-bottom:12px;">&#127939;</div><div style="font-size:16px;font-weight:700;">No session today</div><div style="font-size:13px;color:var(--text-dim);margin-top:8px;">Rest day or no active program.</div><button class="start-btn" style="margin-top:20px;max-width:300px;" onclick="showScreen(\'hyrox-week\')">View Week</button></div>';
+    return;
+  }
+
+  const r = session.resolved;
+  const phaseColor = HYROX_PHASE_COLORS[session.phase] || 'var(--text-dim)';
+  const weekNum = session.week_index + 1;
+  const totalWeeks = hyroxPlan.length > 0 ? Math.max(...hyroxPlan.map(s => s.week_index)) + 1 : '?';
+
+  let html = '<div class="hyrox-today-header">';
+  html += '<div class="hyrox-today-phase" style="background:' + phaseColor + '22;color:' + phaseColor + '">' + session.phase.replace('_', ' ') + ' - Week ' + weekNum + ' of ' + totalWeeks + '</div>';
+  html += '<h2 style="color:' + r.color + '">' + r.name + '</h2>';
+  if (r.duration) html += '<div style="font-size:13px;color:var(--text-dim);">~' + r.duration + ' min</div>';
+  html += '</div>';
+  html += '<div class="hyrox-today-intent">' + r.intent + '</div>';
+
+  if (r.note) {
+    html += '<div style="font-size:12px;color:var(--orange);background:var(--orange-dim);padding:8px 12px;border-radius:8px;margin-bottom:12px;">' + r.note + '</div>';
+  }
+
+  r.blocks.forEach(function(block) {
+    html += '<div class="hyrox-block">';
+    html += '<div class="hyrox-block-title">' + block.title + '</div>';
+    html += '<div class="hyrox-target-row">';
+    var t = block.resolved_targets || {};
+    if (t.hr) html += '<span class="hyrox-target-pill hr">' + t.hr.min + '-' + t.hr.max + ' bpm</span>';
+    if (t.mafHr) html += '<span class="hyrox-target-pill hr">MAF &le; ' + t.mafHr + ' bpm</span>';
+    if (t.runPace) html += '<span class="hyrox-target-pill pace">' + (t.runPaceLabel || '') + ' ' + formatPaceRange(t.runPace) + ' /km</span>';
+    if (t.ergPace) html += '<span class="hyrox-target-pill pace">' + (t.ergPaceLabel || '') + ' ' + formatPaceRange(t.ergPace) + ' /500m</span>';
+    if (t.rpe) html += '<span class="hyrox-target-pill rpe">RPE ' + t.rpe + '</span>';
+    html += '</div>';
+    if (block.movements && block.movements.length) html += '<div class="hyrox-block-detail">' + block.movements.join(' + ') + '</div>';
+    var prog = block.progression;
+    if (prog) {
+      var detail = '';
+      if (prog.type === 'duration') detail = (prog.base_minutes || Math.round(prog.base_seconds / 60)) + ' min';
+      if (prog.type === 'rep_length') detail = prog.base_reps + 'x ' + prog.base_distance + ', rest ' + prog.rest;
+      if (prog.type === 'load') detail = prog.base_sets + 'x' + prog.base_reps;
+      if (prog.type === 'volume') detail = (prog.base_sets || prog.base_reps) + ' reps';
+      if (detail) html += '<div class="hyrox-block-detail" style="margin-top:4px;color:var(--text-muted);">' + block.format + ' - ' + detail + '</div>';
+    }
+    if (block.target && block.target.runPace && !hyroxProfile?.run_5k_seconds) {
+      html += '<div style="font-size:11px;color:var(--orange);margin-top:6px;">Add a 5K test to get paces</div>';
+    }
+    if (block.target && block.target.ergPace && !hyroxProfile?.row_2k_seconds && !hyroxProfile?.ski_2k_seconds) {
+      html += '<div style="font-size:11px;color:var(--orange);margin-top:6px;">Add a 2K row/ski test to get paces</div>';
+    }
+    html += '</div>';
+  });
+
+  var isDone = session.status === 'done';
+  var isSkipped = session.status === 'skipped';
+  var sessionKey = session.id || session.date_local;
+  html += '<div class="hyrox-actions">';
+  html += '<button class="' + (isDone ? 'secondary' : 'primary') + '" onclick="hyroxMarkDone(\'' + sessionKey + '\')" ' + (isDone ? 'disabled' : '') + '>' + (isDone ? 'Done' : 'Mark Done') + '</button>';
+  html += '<button class="secondary" onclick="hyroxSkipSession(\'' + sessionKey + '\')" ' + (isSkipped ? 'disabled' : '') + '>' + (isSkipped ? 'Skipped' : 'Skip') + '</button>';
+  html += '<button class="danger" onclick="hyroxSwapForEasy(\'' + sessionKey + '\')">Swap Easy</button>';
+  html += '</div>';
+
+  html += '<div class="hyrox-setup-card" style="margin-top:12px;"><label>Session RPE (1-10)</label>';
+  html += '<input type="number" id="hyrox-session-rpe" min="1" max="10" value="' + (session.rpe || '') + '" placeholder="7"></div>';
+  html += '<div class="hyrox-setup-card"><label>Notes</label>';
+  html += '<input type="text" id="hyrox-session-notes" value="' + (session.notes || '') + '" placeholder="How did it feel?"></div>';
+
+  container.innerHTML = html;
+}
+
+function hyroxFindSession(key) {
+  return hyroxPlan.find(function(s) { return s.id === key || s.date_local === key; });
+}
+
+async function hyroxMarkDone(sessionKey) {
+  var session = hyroxFindSession(sessionKey);
+  if (!session) return;
+  var rpe = parseInt(document.getElementById('hyrox-session-rpe')?.value) || null;
+  var notes = document.getElementById('hyrox-session-notes')?.value || null;
+  if (session.id) {
+    await hyroxUpdateSessionStatus(session.id, 'done', { rpe: rpe, notes: notes });
+  } else {
+    session.status = 'done';
+    session.rpe = rpe;
+    session.notes = notes;
+    hyroxSaveLocal();
+  }
+  showToast('Session marked done!');
+  hyroxRenderToday(session);
+}
+
+async function hyroxSkipSession(sessionKey) {
+  var session = hyroxFindSession(sessionKey);
+  if (!session) return;
+  if (session.id) {
+    await hyroxUpdateSessionStatus(session.id, 'skipped');
+  } else {
+    session.status = 'skipped';
+    hyroxSaveLocal();
+  }
+  showToast('Session skipped');
+  hyroxRenderToday(session);
+}
+
+async function hyroxSwapForEasy(sessionKey) {
+  var session = hyroxFindSession(sessionKey);
+  if (!session) return;
+  var easyTemplate = HYROX_TEMPLATES.easy_aerobic;
+  session.template_id = 'easy_aerobic';
+  session.resolved = {
+    name: easyTemplate.name, shortName: easyTemplate.shortName,
+    color: easyTemplate.color, duration: easyTemplate.duration,
+    intent: easyTemplate.intent,
+    blocks: easyTemplate.blocks.map(function(b) {
+      return Object.assign({}, b, { resolved_targets: hyroxResolveTargets(hyroxProfile, b), deload_factor: 1 });
+    }),
+    note: 'Swapped from quality session',
+  };
+  session.status = 'planned';
+  if (session.id) {
+    await fetch(SB_URL + '/hyrox_planned_sessions?id=eq.' + session.id, {
+      method: 'PATCH',
+      headers: sbHeaders({ 'Prefer': 'return=minimal' }),
+      body: JSON.stringify({ template_id: 'easy_aerobic', resolved: session.resolved, status: 'planned' }),
+    });
+  }
+  hyroxSaveLocal();
+  showToast('Swapped for easy aerobic');
+  hyroxRenderToday(session);
+}
+
+// ── Week Screen ───────────────────────────────────────────────
+
+function hyroxGetCurrentWeekSessions() {
+  var monday = hyroxGetMonday(new Date());
+  var sunday = hyroxAddDays(monday, 6);
+  var monStr = monday.toISOString().slice(0, 10);
+  var sunStr = sunday.toISOString().slice(0, 10);
+  return hyroxPlan.filter(function(s) { return s.date_local >= monStr && s.date_local <= sunStr; });
+}
+
+function hyroxRenderWeek() {
+  var container = document.getElementById('hyrox-week-content');
+  var weekSessions = hyroxGetCurrentWeekSessions();
+  var today = new Date().toISOString().slice(0, 10);
+  var monday = hyroxGetMonday(new Date());
+
+  if (!weekSessions.length) {
+    container.innerHTML = '<div style="text-align:center;padding:40px 0;"><div style="font-size:16px;font-weight:700;">No sessions this week</div><div style="font-size:13px;color:var(--text-dim);margin-top:8px;">Set up your HYROX program to get started.</div><button class="start-btn" style="margin-top:20px;max-width:300px;" onclick="showScreen(\'hyrox-setup\')">Set Up Program</button></div>';
+    return;
+  }
+
+  var dayLabels = ['MON', 'TUE', 'WED', 'THU', 'FRI', 'SAT', 'SUN'];
+  var html = '<div class="hyrox-week-strip">';
+  for (var i = 0; i < 7; i++) {
+    var date = hyroxAddDays(monday, i);
+    var dateStr = date.toISOString().slice(0, 10);
+    var session = weekSessions.find(function(s) { return s.date_local === dateStr; });
+    var isToday = dateStr === today;
+    var dayNum = date.getDate();
+    var statusChip = '';
+    if (session) {
+      var chipClass = session.status === 'done' ? 'done' : session.status === 'skipped' ? 'skipped' : session.status === 'partial' ? 'partial' : session.template_id === 'rest' ? 'rest' : 'planned';
+      var chipLabel = session.template_id === 'rest' ? 'Rest' : (session.resolved ? session.resolved.shortName : session.status);
+      statusChip = '<div class="hyrox-status-chip ' + chipClass + '">' + chipLabel + '</div>';
+    }
+    html += '<div class="hyrox-week-day ' + (isToday ? 'today' : '') + '" onclick="hyroxShowDaySession(\'' + dateStr + '\')">';
+    html += '<div class="day-label">' + dayLabels[i] + '</div>';
+    html += '<div class="day-num">' + dayNum + '</div>';
+    html += statusChip;
+    html += '</div>';
+  }
+  html += '</div>';
+
+  var easyTypes = { easy_aerobic: true, long_aerobic: true, z2_fartlek: true, rest: true };
+  var doneSessions = weekSessions.filter(function(s) { return s.status === 'done'; });
+  var easyMin = 0, hardMin = 0;
+  doneSessions.forEach(function(s) {
+    var dur = s.resolved ? s.resolved.duration : 0;
+    if (easyTypes[s.template_id]) easyMin += dur; else hardMin += dur;
+  });
+  var totalMin = easyMin + hardMin;
+  var easyPct = totalMin > 0 ? Math.round((easyMin / totalMin) * 100) : 0;
+
+  html += '<div class="hyrox-week-summary"><h3>Weekly Load (completed sessions)</h3>';
+  html += '<div style="display:flex;justify-content:space-between;font-size:12px;margin-bottom:4px;">';
+  html += '<span style="color:var(--green);">Easy: ' + easyMin + ' min (' + easyPct + '%)</span>';
+  html += '<span style="color:var(--red);">Hard: ' + hardMin + ' min (' + (totalMin > 0 ? 100 - easyPct : 0) + '%)</span></div>';
+  html += '<div class="hyrox-load-bar"><div class="hyrox-load-fill" style="width:' + easyPct + '%;background:var(--green);"></div></div>';
+  html += '<div style="font-size:11px;color:var(--text-muted);margin-top:4px;">Target: ~80% easy / 20% hard</div></div>';
+
+  var todaySession = weekSessions.find(function(s) { return s.date_local === today; });
+  if (todaySession && todaySession.template_id !== 'rest') {
+    var r = todaySession.resolved;
+    html += '<div class="hyrox-home-card" onclick="hyroxShowDaySession(\'' + today + '\')">';
+    html += '<div class="session-type" style="color:' + r.color + '">' + todaySession.phase.replace('_', ' ') + '</div>';
+    html += '<div class="session-name">' + r.name + '</div>';
+    html += '<div class="session-meta">' + (r.duration ? '~' + r.duration + ' min' : '') + ' - ' + todaySession.status + '</div></div>';
+  }
+
+  html += '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin:16px 0 10px;">This Week</div>';
+  weekSessions.forEach(function(s) {
+    if (s.template_id === 'rest') return;
+    var r = s.resolved;
+    var statusIcon = s.status === 'done' ? '&#10003;' : s.status === 'skipped' ? '&#10007;' : '&#9679;';
+    var statusColor = s.status === 'done' ? 'var(--green)' : s.status === 'skipped' ? 'var(--red)' : 'var(--text-muted)';
+    html += '<div class="hyrox-block" style="cursor:pointer;display:flex;align-items:center;gap:12px;" onclick="hyroxShowDaySession(\'' + s.date_local + '\')">';
+    html += '<span style="color:' + statusColor + ';font-size:16px;">' + statusIcon + '</span>';
+    html += '<div style="flex:1;"><div style="font-size:14px;font-weight:700;color:' + r.color + '">' + (r.shortName || r.name) + '</div>';
+    html += '<div style="font-size:11px;color:var(--text-dim);">' + s.date_local + ' - ' + (r.duration ? '~' + r.duration + ' min' : 'Rest') + '</div></div>';
+    html += '<div style="color:var(--text-muted);font-size:18px;">&#8250;</div></div>';
+  });
+
+  container.innerHTML = html;
+}
+
+function hyroxShowDaySession(dateStr) {
+  var session = hyroxPlan.find(function(s) { return s.date_local === dateStr; });
+  if (session) {
+    hyroxRenderToday(session);
+    showScreen('hyrox-today');
+  }
+}
+
+// ── Plan Overview Screen ──────────────────────────────────────
+
+function hyroxRenderPlan() {
+  var container = document.getElementById('hyrox-plan-content');
+  if (!hyroxPlan.length) {
+    container.innerHTML = '<div style="text-align:center;padding:40px;color:var(--text-dim);">No plan generated yet.</div>';
+    return;
+  }
+
+  var weeks = {};
+  hyroxPlan.forEach(function(s) {
+    if (!weeks[s.week_index]) weeks[s.week_index] = { phase: s.phase, sessions: [] };
+    weeks[s.week_index].sessions.push(s);
+  });
+
+  var phaseBands = [];
+  var current = null;
+  Object.keys(weeks).sort(function(a, b) { return a - b; }).forEach(function(wIdx) {
+    var w = weeks[wIdx];
+    if (current && current.phase === w.phase) {
+      current.endWeek = parseInt(wIdx) + 1;
+      current.sessions += w.sessions.filter(function(s) { return s.template_id !== 'rest'; }).length;
+      current.done += w.sessions.filter(function(s) { return s.status === 'done'; }).length;
+    } else {
+      if (current) phaseBands.push(current);
+      current = {
+        phase: w.phase, startWeek: parseInt(wIdx) + 1, endWeek: parseInt(wIdx) + 1,
+        sessions: w.sessions.filter(function(s) { return s.template_id !== 'rest'; }).length,
+        done: w.sessions.filter(function(s) { return s.status === 'done'; }).length,
+      };
+    }
+  });
+  if (current) phaseBands.push(current);
+
+  var html = '';
+  if (hyroxProfile && hyroxProfile.race_date) {
+    var raceDate = new Date(hyroxProfile.race_date + 'T00:00:00');
+    var daysToRace = Math.ceil((raceDate - new Date()) / 86400000);
+    html += '<div style="text-align:center;margin-bottom:16px;"><div style="font-size:32px;font-weight:800;">' + daysToRace + '</div>';
+    html += '<div style="font-size:13px;color:var(--text-dim);">days to race (' + hyroxProfile.race_date + ')</div></div>';
+  }
+
+  phaseBands.forEach(function(band) {
+    var color = HYROX_PHASE_COLORS[band.phase] || 'var(--text-dim)';
+    var weekRange = band.startWeek === band.endWeek ? 'Week ' + band.startWeek : 'Weeks ' + band.startWeek + '-' + band.endWeek;
+    var pct = band.sessions > 0 ? Math.round((band.done / band.sessions) * 100) : 0;
+    html += '<div class="hyrox-plan-phase"><div class="phase-bar" style="background:' + color + ';"></div>';
+    html += '<div class="phase-info"><div class="phase-name" style="color:' + color + '">' + band.phase.replace('_', ' ').replace(/\b\w/g, function(c) { return c.toUpperCase(); }) + '</div>';
+    html += '<div class="phase-weeks">' + weekRange + ' - ' + band.sessions + ' sessions (' + pct + '% done)</div></div></div>';
+  });
+
+  html += '<div style="margin-top:16px;"><button class="start-btn" style="background:var(--card);color:var(--text);border:1px solid var(--card-border);" onclick="showScreen(\'hyrox-benchmarks\')">View Benchmarks</button></div>';
+
+  container.innerHTML = html;
+}
+
+// ── Benchmarks Screen ─────────────────────────────────────────
+
+var HYROX_BENCH_TYPES = [
+  { id: 'max_hr_ramp',    name: 'Max HR Ramp Test',    unit: 'bpm',     format: 'number' },
+  { id: 'maf_run',        name: 'MAF Run',             unit: 'min/km',  format: 'pace' },
+  { id: 'row_2k',         name: '2K Row',              unit: 'time',    format: 'pace' },
+  { id: 'ski_2k',         name: '2K Ski',              unit: 'time',    format: 'pace' },
+  { id: 'sled_push',      name: 'Sled Push',           unit: 'seconds', format: 'number' },
+  { id: 'compromised_run',name: 'Compromised Run',     unit: 'seconds', format: 'number' },
+  { id: 'run_5k',         name: '5K Run',              unit: 'time',    format: 'pace' },
+];
+
+function hyroxRenderBenchmarks() {
+  var container = document.getElementById('hyrox-benchmarks-content');
+  var html = '';
+
+  HYROX_BENCH_TYPES.forEach(function(bt) {
+    var results = hyroxBenchmarks.filter(function(b) { return b.test_type === bt.id; });
+    var latest = results[0];
+    html += '<div class="hyrox-bench-card"><h4>' + bt.name + '</h4>';
+    if (latest) {
+      var display = bt.format === 'pace' ? formatHyroxPace(latest.result_value) : latest.result_value;
+      html += '<div class="bench-value">' + display + ' <span style="font-size:13px;font-weight:600;color:var(--text-dim);">' + bt.unit + '</span></div>';
+      html += '<div class="bench-date">' + latest.date_local + '</div>';
+    } else {
+      html += '<div style="font-size:13px;color:var(--text-muted);">No test recorded</div>';
+    }
+    html += '</div>';
+  });
+
+  html += '<div style="font-size:11px;font-weight:700;color:var(--text-muted);text-transform:uppercase;letter-spacing:1px;margin:20px 0 10px;">Add Result</div>';
+  html += '<div class="hyrox-setup-card"><label>Test Type</label><select id="hyrox-bench-type">';
+  HYROX_BENCH_TYPES.forEach(function(bt) { html += '<option value="' + bt.id + '">' + bt.name + '</option>'; });
+  html += '</select></div>';
+  html += '<div class="hyrox-setup-card"><label>Date</label><input type="date" id="hyrox-bench-date" value="' + new Date().toISOString().slice(0, 10) + '"></div>';
+  html += '<div class="hyrox-setup-card"><label>Result (time as mm:ss, bpm as number, seconds as number)</label>';
+  html += '<input type="text" id="hyrox-bench-value" placeholder="7:30" inputmode="numeric"></div>';
+  html += '<button class="start-btn" onclick="hyroxAddBenchmark()" style="margin-top:12px;">Save Benchmark</button>';
+
+  container.innerHTML = html;
+}
+
+async function hyroxAddBenchmark() {
+  var typeId = document.getElementById('hyrox-bench-type').value;
+  var dateLocal = document.getElementById('hyrox-bench-date').value;
+  var rawValue = document.getElementById('hyrox-bench-value').value.trim();
+  if (!rawValue) { showToast('Enter a result', true); return; }
+
+  var bt = HYROX_BENCH_TYPES.find(function(b) { return b.id === typeId; });
+  var resultValue;
+  if (bt.format === 'pace') {
+    resultValue = parsePaceToSeconds(rawValue);
+  } else {
+    resultValue = parseFloat(rawValue);
+  }
+  if (resultValue == null || isNaN(resultValue)) { showToast('Invalid value', true); return; }
+
+  var ok = await hyroxSaveBenchmark({
+    test_type: typeId,
+    date_local: dateLocal,
+    result_value: resultValue,
+    result_unit: bt.unit,
+  });
+
+  if (!ok) { showToast('Save failed', true); return; }
+
+  if (typeId === 'max_hr_ramp' && hyroxProfile) await hyroxSaveProfile({ max_hr: resultValue });
+  if (typeId === 'row_2k' && hyroxProfile) await hyroxSaveProfile({ row_2k_seconds: resultValue });
+  if (typeId === 'ski_2k' && hyroxProfile) await hyroxSaveProfile({ ski_2k_seconds: resultValue });
+  if (typeId === 'run_5k' && hyroxProfile) await hyroxSaveProfile({ run_5k_seconds: resultValue });
+
+  showToast('Benchmark saved!');
+  hyroxRenderBenchmarks();
+}
+
 // ============================================================
 // NORWEGIAN 4x4
 // ============================================================
