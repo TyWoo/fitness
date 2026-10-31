@@ -365,14 +365,6 @@ body {
 /* ===== NORWEGIAN 4x4 ===== */
 .norw-setup { padding: 20px 0; }
 .norw-setup-title { font-size: 20px; font-weight: 800; margin-bottom: 16px; }
-.norw-connect-btn {
-  width: 100%; padding: 16px; background: var(--accent); color: #fff;
-  border: none; border-radius: var(--radius); font-size: 16px; font-weight: 700;
-  cursor: pointer; margin-bottom: 16px; transition: opacity 0.15s;
-}
-.norw-connect-btn:active { opacity: 0.8; }
-.norw-connect-btn.connected { background: var(--green); }
-.norw-connect-btn.connecting { background: var(--orange); }
 .norw-config-card {
   background: var(--card); border: 1px solid var(--card-border);
   border-radius: var(--radius); padding: 16px; margin-bottom: 12px;
@@ -406,35 +398,11 @@ body {
   font-size: 72px; font-weight: 800; font-family: 'SF Mono', 'JetBrains Mono', monospace;
   letter-spacing: -2px; margin: 8px 0;
 }
-.norw-hr-display { font-size: 64px; font-weight: 800; margin: 4px 0; }
-.norw-hr-display .bpm-label { font-size: 18px; font-weight: 600; color: var(--text-dim); }
-.norw-zone-badge {
-  display: inline-block; padding: 4px 14px; border-radius: 8px;
-  font-size: 14px; font-weight: 700; margin-bottom: 12px;
-}
-.norw-zone-badge.target { background: var(--green-dim); color: var(--green); }
-.norw-zone-badge.above { background: var(--red-dim); color: var(--red); }
-.norw-zone-badge.below { background: var(--orange-dim); color: var(--orange); }
 .norw-cycle { font-size: 14px; color: var(--text-dim); font-weight: 600; margin-bottom: 12px; }
-.norw-metrics {
-  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px;
-  margin-top: auto; padding: 12px 0;
-}
-.norw-metric {
-  background: var(--card); border: 1px solid var(--card-border);
-  border-radius: var(--radius-sm); padding: 12px 8px; text-align: center;
-}
-.norw-metric-val { font-size: 20px; font-weight: 800; }
-.norw-metric-label { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
 .norw-stop-btn {
   width: 100%; padding: 14px; background: var(--red); color: #fff;
   border: none; border-radius: var(--radius); font-size: 16px; font-weight: 700;
   cursor: pointer; margin-top: 12px;
-}
-.norw-bt-warning {
-  background: var(--orange-dim); color: var(--orange); padding: 8px 16px;
-  border-radius: 8px; font-size: 13px; font-weight: 600; margin-bottom: 8px;
-  cursor: pointer; display: none;
 }
 .norw-flash { animation: norw-flash-anim 0.5s ease-out; }
 @keyframes norw-flash-anim {
@@ -454,23 +422,6 @@ body {
   display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;
 }
 .norw-interval-phase { font-size: 13px; font-weight: 700; letter-spacing: 0.5px; }
-.norw-interval-grid {
-  display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px;
-}
-.norw-interval-stat { font-size: 12px; color: var(--text-dim); }
-.norw-interval-stat span { display: block; font-size: 16px; font-weight: 700; color: var(--text); }
-.norw-zone-bar {
-  display: flex; height: 24px; border-radius: 6px; overflow: hidden; margin: 16px 0;
-}
-.norw-zone-bar div { transition: width 0.3s; }
-.norw-totals {
-  background: var(--card); border: 1px solid var(--card-border);
-  border-radius: var(--radius); padding: 16px; margin-bottom: 16px;
-}
-.norw-totals-grid {
-  display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
-}
-.norw-totals-grid .norw-interval-stat span { font-size: 18px; }
 .norw-export-btns { display: flex; gap: 10px; margin-top: 16px; }
 .norw-export-btn {
   flex: 1; padding: 14px; background: var(--card); border: 1px solid var(--card-border);
@@ -478,6 +429,150 @@ body {
   cursor: pointer; text-align: center;
 }
 .norw-export-btn:active { background: var(--surface); }
+
+/* ===== HYROX PROGRAM ===== */
+.hyrox-setup-card {
+  background: var(--card); border: 1px solid var(--card-border);
+  border-radius: var(--radius); padding: 16px; margin-bottom: 12px;
+}
+.hyrox-setup-card label {
+  display: block; font-size: 13px; color: var(--text-dim);
+  margin-bottom: 6px; font-weight: 600;
+}
+.hyrox-setup-card input, .hyrox-setup-card select {
+  width: 100%; padding: 10px; background: var(--surface);
+  border: 1px solid var(--card-border); border-radius: var(--radius-sm);
+  color: var(--text); font-size: 15px; font-weight: 600;
+}
+.hyrox-setup-card .row {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 10px;
+}
+.hyrox-equip-grid {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px;
+}
+.hyrox-equip-btn {
+  padding: 10px; background: var(--surface); border: 1px solid var(--card-border);
+  border-radius: var(--radius-sm); color: var(--text-dim); font-size: 13px;
+  font-weight: 600; cursor: pointer; text-align: center;
+}
+.hyrox-equip-btn.active {
+  border-color: var(--accent); color: var(--accent); background: var(--accent-dim);
+}
+.hyrox-today-header {
+  text-align: center; padding: 16px 0 12px;
+}
+.hyrox-today-header h2 { font-size: 20px; font-weight: 800; }
+.hyrox-today-phase {
+  font-size: 11px; font-weight: 700; letter-spacing: 1px;
+  text-transform: uppercase; padding: 3px 10px; border-radius: 6px;
+  display: inline-block; margin-bottom: 6px;
+}
+.hyrox-today-intent {
+  font-size: 13px; color: var(--text-dim); margin: 8px 0 16px;
+  line-height: 1.5;
+}
+.hyrox-block {
+  background: var(--card); border: 1px solid var(--card-border);
+  border-radius: var(--radius); padding: 14px 16px; margin-bottom: 10px;
+}
+.hyrox-block-title {
+  font-size: 14px; font-weight: 700; margin-bottom: 8px;
+}
+.hyrox-target-row {
+  display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 6px;
+}
+.hyrox-target-pill {
+  font-size: 11px; font-weight: 700; padding: 3px 8px;
+  border-radius: 6px; display: inline-flex; align-items: center; gap: 4px;
+}
+.hyrox-target-pill.hr { background: var(--red-dim); color: var(--red); }
+.hyrox-target-pill.pace { background: var(--accent-dim); color: var(--accent); }
+.hyrox-target-pill.rpe { background: var(--orange-dim); color: var(--orange); }
+.hyrox-block-detail {
+  font-size: 12px; color: var(--text-dim); line-height: 1.6;
+}
+.hyrox-actions {
+  display: flex; gap: 8px; margin-top: 16px;
+}
+.hyrox-actions button {
+  flex: 1; padding: 14px; border-radius: var(--radius); font-size: 14px;
+  font-weight: 700; cursor: pointer; border: none;
+}
+.hyrox-actions .primary { background: var(--green); color: #fff; }
+.hyrox-actions .secondary { background: var(--card); color: var(--text); border: 1px solid var(--card-border); }
+.hyrox-actions .danger { background: var(--red-dim); color: var(--red); border: 1px solid transparent; }
+.hyrox-week-strip {
+  display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px;
+  margin-bottom: 16px;
+}
+.hyrox-week-day {
+  background: var(--card); border: 1px solid var(--card-border);
+  border-radius: var(--radius-sm); padding: 10px 4px; text-align: center;
+  cursor: pointer; transition: all 0.15s;
+}
+.hyrox-week-day.today { border-color: var(--accent); }
+.hyrox-week-day .day-label {
+  font-size: 10px; font-weight: 700; color: var(--text-muted);
+  text-transform: uppercase; margin-bottom: 4px;
+}
+.hyrox-week-day .day-num {
+  font-size: 16px; font-weight: 800; margin-bottom: 4px;
+}
+.hyrox-status-chip {
+  font-size: 9px; font-weight: 700; padding: 2px 5px;
+  border-radius: 4px; display: inline-block;
+}
+.hyrox-status-chip.planned { background: var(--accent-dim); color: var(--accent); }
+.hyrox-status-chip.done { background: var(--green-dim); color: var(--green); }
+.hyrox-status-chip.partial { background: var(--orange-dim); color: var(--orange); }
+.hyrox-status-chip.skipped { background: var(--red-dim); color: var(--red); }
+.hyrox-status-chip.rest { background: var(--surface); color: var(--text-muted); }
+.hyrox-week-summary {
+  background: var(--card); border: 1px solid var(--card-border);
+  border-radius: var(--radius); padding: 14px 16px; margin-bottom: 12px;
+}
+.hyrox-week-summary h3 {
+  font-size: 13px; font-weight: 700; color: var(--text-dim); margin-bottom: 10px;
+}
+.hyrox-load-bar {
+  height: 8px; border-radius: 4px; background: var(--surface);
+  overflow: hidden; margin: 6px 0;
+}
+.hyrox-load-fill {
+  height: 100%; border-radius: 4px; transition: width 0.3s;
+}
+.hyrox-plan-phase {
+  background: var(--card); border: 1px solid var(--card-border);
+  border-radius: var(--radius); padding: 12px 16px; margin-bottom: 8px;
+  display: flex; align-items: center; gap: 12px;
+}
+.hyrox-plan-phase .phase-bar {
+  width: 4px; border-radius: 2px; align-self: stretch;
+}
+.hyrox-plan-phase .phase-info { flex: 1; }
+.hyrox-plan-phase .phase-name { font-size: 14px; font-weight: 700; }
+.hyrox-plan-phase .phase-weeks { font-size: 12px; color: var(--text-dim); }
+.hyrox-bench-card {
+  background: var(--card); border: 1px solid var(--card-border);
+  border-radius: var(--radius); padding: 14px 16px; margin-bottom: 10px;
+}
+.hyrox-bench-card h4 { font-size: 14px; font-weight: 700; margin-bottom: 4px; }
+.hyrox-bench-card .bench-value { font-size: 24px; font-weight: 800; }
+.hyrox-bench-card .bench-date { font-size: 11px; color: var(--text-dim); }
+.hyrox-home-card {
+  background: var(--card); border: 2px solid var(--green);
+  border-radius: var(--radius); padding: 16px; margin-bottom: 16px;
+  cursor: pointer;
+}
+.hyrox-home-card:active { transform: scale(0.99); }
+.hyrox-home-card .session-type {
+  font-size: 11px; font-weight: 700; letter-spacing: 0.5px;
+  text-transform: uppercase; margin-bottom: 4px;
+}
+.hyrox-home-card .session-name { font-size: 17px; font-weight: 800; }
+.hyrox-home-card .session-meta {
+  font-size: 12px; color: var(--text-dim); margin-top: 4px;
+}
 </style>
 </head>
 <body>
@@ -599,10 +694,6 @@ body {
       <div class="norw-setup-title" style="margin:0;flex:1;">Norwegian 4×4</div>
     </div>
 
-    <button class="norw-connect-btn" id="norw-connect-btn" onclick="norwConnectHR()">
-      ❤️ Connect Polar H10
-    </button>
-
     <div class="norw-config-card">
       <div class="norw-config-row">
         <label>Work Duration (min)</label>
@@ -616,10 +707,6 @@ body {
         <label>Cycles</label>
         <input type="number" id="norw-cycles" value="4" min="1" max="10">
       </div>
-      <div class="norw-config-row">
-        <label>Resting HR (bpm)</label>
-        <input type="number" id="norw-resting-hr" value="60" min="30" max="100">
-      </div>
     </div>
 
     <button class="norw-start-btn" id="norw-start-btn" onclick="norwStart()">
@@ -631,33 +718,10 @@ body {
 <!-- ==================== NORWEGIAN 4x4 RUNNING ==================== -->
 <div id="screen-norw-running" class="screen">
   <div class="norw-running">
-    <div class="norw-bt-warning" id="norw-bt-warning" onclick="norwReconnectHR()">
-      ⚠️ HR disconnected — tap to reconnect
-    </div>
     <div class="norw-phase" id="norw-phase">WORK</div>
     <div class="norw-countdown" id="norw-countdown">4:00</div>
-    <div class="norw-hr-display" id="norw-hr">---<span class="bpm-label"> bpm</span></div>
-    <div class="norw-zone-badge" id="norw-zone-badge">--</div>
-    <div id="norw-target-range" style="font-size:13px;color:var(--text-dim);font-weight:600;margin-bottom:12px;"></div>
     <div class="norw-cycle" id="norw-cycle">Cycle 1 of 4</div>
-    <div style="background:var(--card);border:1px solid var(--card-border);border-radius:var(--radius);padding:8px;margin:8px 0;">
-      <canvas id="norw-live-graph" width="600" height="150" style="width:100%;height:auto;"></canvas>
-    </div>
-    <div class="norw-metrics">
-      <div class="norw-metric">
-        <div class="norw-metric-val" id="norw-dist">0.00</div>
-        <div class="norw-metric-label">km</div>
-      </div>
-      <div class="norw-metric">
-        <div class="norw-metric-val" id="norw-pace">--:--</div>
-        <div class="norw-metric-label">min/km</div>
-      </div>
-      <div class="norw-metric">
-        <div class="norw-metric-val" id="norw-elev">0</div>
-        <div class="norw-metric-label">↑ elev (m)</div>
-      </div>
-    </div>
-    <div style="display:flex;gap:10px;">
+    <div style="display:flex;gap:10px;margin-top:32px;">
       <button class="norw-stop-btn" onclick="norwSkip()" style="flex:1;background:var(--surface);color:var(--text);">SKIP ⏭</button>
       <button class="norw-stop-btn" onclick="norwStop()" style="flex:1;">STOP</button>
     </div>
@@ -673,18 +737,57 @@ body {
     <div id="norw-sync-status" style="margin-top:8px;font-size:11px;font-family:'JetBrains Mono','SF Mono',monospace;letter-spacing:0.3px;"></div>
   </div>
   <div id="norw-sum-intervals"></div>
-  <div style="font-size:13px;font-weight:700;color:var(--text-dim);margin:16px 0 8px;letter-spacing:0.5px;">HR &amp; PACE</div>
-  <div style="background:var(--card);border:1px solid var(--card-border);border-radius:var(--radius);padding:12px;margin-bottom:16px;">
-    <canvas id="norw-graph" width="600" height="220" style="width:100%;height:auto;"></canvas>
-  </div>
-  <div style="font-size:13px;font-weight:700;color:var(--text-dim);margin:16px 0 8px;letter-spacing:0.5px;">ZONE TIME</div>
-  <div class="norw-zone-bar" id="norw-zone-bar"></div>
-  <div class="norw-totals" id="norw-sum-totals"></div>
   <div class="norw-export-btns">
-    <div class="norw-export-btn" onclick="norwExportCSV()">📊 Export CSV</div>
-    <div class="norw-export-btn" onclick="norwExportJSON()">📤 Export JSON</div>
     <div class="norw-export-btn" onclick="showScreen('home')">← Done</div>
   </div>
+</div>
+
+<!-- ==================== HYROX SETUP ==================== -->
+<div id="screen-hyrox-setup" class="screen">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:20px;">
+    <button class="back-btn" onclick="showScreen('home')">←</button>
+    <div style="font-size:20px;font-weight:800;flex:1;">HYROX Program Setup</div>
+  </div>
+  <div id="hyrox-setup-form"></div>
+</div>
+
+<!-- ==================== HYROX TODAY ==================== -->
+<div id="screen-hyrox-today" class="screen">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:8px;">
+    <button class="back-btn" onclick="showScreen('hyrox-week')">←</button>
+    <div style="flex:1;"></div>
+    <button class="back-btn" onclick="showScreen('hyrox-plan')" title="Full plan">Plan</button>
+  </div>
+  <div id="hyrox-today-content"></div>
+</div>
+
+<!-- ==================== HYROX WEEK ==================== -->
+<div id="screen-hyrox-week" class="screen">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+    <button class="back-btn" onclick="showScreen('home')">←</button>
+    <div style="font-size:20px;font-weight:800;flex:1;">This Week</div>
+    <button class="back-btn" onclick="showScreen('hyrox-plan')" title="Full plan">Plan</button>
+  </div>
+  <div id="hyrox-week-content"></div>
+</div>
+
+<!-- ==================== HYROX PLAN OVERVIEW ==================== -->
+<div id="screen-hyrox-plan" class="screen">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+    <button class="back-btn" onclick="showScreen('hyrox-week')">←</button>
+    <div style="font-size:20px;font-weight:800;flex:1;">Program Plan</div>
+    <button class="back-btn" onclick="showScreen('hyrox-setup')" title="Settings" style="font-size:13px;">Edit</button>
+  </div>
+  <div id="hyrox-plan-content"></div>
+</div>
+
+<!-- ==================== HYROX BENCHMARKS ==================== -->
+<div id="screen-hyrox-benchmarks" class="screen">
+  <div style="display:flex;align-items:center;gap:12px;margin-bottom:16px;">
+    <button class="back-btn" onclick="showScreen('hyrox-week')">←</button>
+    <div style="font-size:20px;font-weight:800;flex:1;">Benchmarks</div>
+  </div>
+  <div id="hyrox-benchmarks-content"></div>
 </div>
 
 <div class="toast" id="toast"></div>
@@ -1937,31 +2040,12 @@ window.addEventListener('beforeunload', (e) => {
 // ============================================================
 // NORWEGIAN 4x4
 // ============================================================
-const NORW_MAX_HR = 178;
-const NORW_ZONE_RANGES = [
-  { zone: 1, min: 0.50, max: 0.60 },
-  { zone: 2, min: 0.60, max: 0.70 },
-  { zone: 3, min: 0.70, max: 0.80 },
-  { zone: 4, min: 0.80, max: 0.90 },
-  { zone: 5, min: 0.90, max: 1.00 },
-];
-const NORW_ZONE_COLORS = { 1: '#3498db', 2: '#2ecc71', 3: '#f1c40f', 4: '#e67e22', 5: '#e74c3c' };
 
 const norwState = {
   // Config
   workDuration: 240,
   recoveryDuration: 180,
   cycles: 4,
-  restingHR: 60,
-  // Bluetooth
-  btDevice: null,
-  btCharacteristic: null,
-  hrConnected: false,
-  currentHR: null,
-  // GPS
-  gpsWatchId: null,
-  lastPosition: null,
-  gpsPoints: [],
   // Timer
   timerInterval: null,
   phase: 'work',
@@ -1977,347 +2061,9 @@ const norwState = {
   startTime: null,
   intervals: [],
   currentInterval: null,
-  hrTimeline: [],    // {t: seconds since start, hr: bpm}
-  paceTimeline: [],  // {t: seconds since start, pace: sec/km}
   // Audio
   audioCtx: null,
 };
-
-function norwGetZoneBounds(restingHR) {
-  const hrr = NORW_MAX_HR - restingHR;
-  return NORW_ZONE_RANGES.map(z => ({
-    zone: z.zone,
-    lo: Math.round(restingHR + hrr * z.min),
-    hi: Math.round(restingHR + hrr * z.max),
-  }));
-}
-
-function norwGetZone(hr, restingHR) {
-  if (!hr) return null;
-  const bounds = norwGetZoneBounds(restingHR);
-  for (let i = bounds.length - 1; i >= 0; i--) {
-    if (hr >= bounds[i].lo) return bounds[i].zone;
-  }
-  return 1;
-}
-
-function norwGetTargetZone() {
-  return norwState.phase === 'work' ? 4 : 2;
-}
-
-function norwGetTargetStatus(hr) {
-  if (!hr) return 'below';
-  const target = norwGetTargetZone();
-  const bounds = norwGetZoneBounds(norwState.restingHR);
-  const range = bounds[target - 1];
-  if (hr < range.lo) return 'below';
-  if (hr > range.hi) return 'above';
-  return 'target';
-}
-
-// ── Bluetooth HR ──────────────────────────────────────────────
-async function norwConnectHR() {
-  const btn = document.getElementById('norw-connect-btn');
-  btn.className = 'norw-connect-btn connecting';
-  btn.textContent = '⏳ Connecting...';
-  try {
-    const device = await navigator.bluetooth.requestDevice({
-      filters: [{ services: ['heart_rate'] }],
-      optionalServices: ['heart_rate'],
-    });
-    device.addEventListener('gattserverdisconnected', norwOnHRDisconnect);
-    const server = await device.gatt.connect();
-    const service = await server.getPrimaryService('heart_rate');
-    const char = await service.getCharacteristic('heart_rate_measurement');
-    char.addEventListener('characteristicvaluechanged', norwOnHRValue);
-    await char.startNotifications();
-    norwState.btDevice = device;
-    norwState.btCharacteristic = char;
-    norwState.hrConnected = true;
-    btn.className = 'norw-connect-btn connected';
-    btn.textContent = '✓ Polar H10 Connected';
-  } catch (err) {
-    console.error('BT connect error:', err);
-    btn.className = 'norw-connect-btn';
-    btn.textContent = '❤️ Connect Polar H10';
-    if (err.name !== 'NotFoundError') {
-      showToast('Bluetooth error: ' + err.message, true);
-    }
-  }
-}
-
-function norwOnHRValue(event) {
-  const value = event.target.value;
-  const flags = value.getUint8(0);
-  const is16Bit = flags & 0x01;
-  const hr = is16Bit ? value.getUint16(1, true) : value.getUint8(1);
-  norwState.currentHR = hr;
-  if (norwState.running && norwState.currentInterval) {
-    norwState.currentInterval.hrSamples.push(hr);
-    norwState.hrTimeline.push({ t: (Date.now() - norwState.startTime) / 1000, hr });
-  }
-  const hrEl = document.getElementById('norw-hr');
-  if (hrEl && norwState.running) {
-    hrEl.innerHTML = hr + '<span class="bpm-label"> bpm</span>';
-    norwUpdateZoneBadge(hr);
-  }
-}
-
-function norwOnHRDisconnect() {
-  norwState.hrConnected = false;
-  norwState.currentHR = null;
-  const warning = document.getElementById('norw-bt-warning');
-  if (warning) warning.style.display = 'block';
-  const hrEl = document.getElementById('norw-hr');
-  if (hrEl) hrEl.innerHTML = '---<span class="bpm-label"> bpm</span>';
-  const btn = document.getElementById('norw-connect-btn');
-  if (btn) {
-    btn.className = 'norw-connect-btn';
-    btn.textContent = '❤️ Connect Polar H10';
-  }
-}
-
-async function norwReconnectHR() {
-  if (norwState.btDevice && norwState.btDevice.gatt) {
-    try {
-      const server = await norwState.btDevice.gatt.connect();
-      const service = await server.getPrimaryService('heart_rate');
-      const char = await service.getCharacteristic('heart_rate_measurement');
-      char.addEventListener('characteristicvaluechanged', norwOnHRValue);
-      await char.startNotifications();
-      norwState.btCharacteristic = char;
-      norwState.hrConnected = true;
-      const warning = document.getElementById('norw-bt-warning');
-      if (warning) warning.style.display = 'none';
-    } catch (err) {
-      showToast('Reconnect failed: ' + err.message, true);
-    }
-  }
-}
-
-function norwUpdateZoneBadge(hr) {
-  const badge = document.getElementById('norw-zone-badge');
-  if (!badge) return;
-  const zone = norwGetZone(hr, norwState.restingHR);
-  const status = norwGetTargetStatus(hr);
-  const target = norwGetTargetZone();
-  badge.textContent = `Zone ${zone} — ${status === 'target' ? 'IN TARGET' : status === 'above' ? 'ABOVE Z' + target : 'BELOW Z' + target}`;
-  badge.className = 'norw-zone-badge ' + status;
-}
-
-// ── GPS ───────────────────────────────────────────────────────
-function norwStartGPS() {
-  if (!navigator.geolocation) { showToast('GPS not available', true); return; }
-  norwState.gpsPoints = [];
-  norwState.lastPosition = null;
-  norwState.gpsWatchId = navigator.geolocation.watchPosition(
-    norwOnGPSPosition,
-    (err) => console.warn('GPS error:', err.message),
-    { enableHighAccuracy: true, maximumAge: 2000, timeout: 10000 }
-  );
-}
-
-function norwStopGPS() {
-  if (norwState.gpsWatchId !== null) {
-    navigator.geolocation.clearWatch(norwState.gpsWatchId);
-    norwState.gpsWatchId = null;
-  }
-}
-
-function norwOnGPSPosition(pos) {
-  const { latitude, longitude, altitude, accuracy } = pos.coords;
-  if (accuracy > 20) return;
-  const point = { lat: latitude, lon: longitude, alt: altitude, time: Date.now(), accuracy };
-  norwState.gpsPoints.push(point);
-  if (norwState.lastPosition && norwState.currentInterval) {
-    const dist = haversine(norwState.lastPosition.lat, norwState.lastPosition.lon, latitude, longitude);
-    norwState.currentInterval.distance += dist;
-    if (altitude !== null && norwState.lastPosition.alt !== null) {
-      const elevDiff = altitude - norwState.lastPosition.alt;
-      if (elevDiff > 0) norwState.currentInterval.elevGain += elevDiff;
-      else norwState.currentInterval.elevLoss += Math.abs(elevDiff);
-    }
-  }
-  norwState.lastPosition = point;
-  // Track pace for summary graph
-  const pace = norwGetCurrentPace();
-  if (pace && pace < 1200) { // ignore > 20 min/km
-    norwState.paceTimeline.push({ t: (Date.now() - norwState.startTime) / 1000, pace });
-  }
-  norwUpdateMetrics();
-}
-
-function haversine(lat1, lon1, lat2, lon2) {
-  const R = 6371;
-  const dLat = (lat2 - lat1) * Math.PI / 180;
-  const dLon = (lon2 - lon1) * Math.PI / 180;
-  const a = Math.sin(dLat / 2) ** 2 +
-    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
-    Math.sin(dLon / 2) ** 2;
-  return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
-}
-
-function norwGetTotalDistance() {
-  let total = 0;
-  norwState.intervals.forEach(iv => total += iv.distance);
-  if (norwState.currentInterval) total += norwState.currentInterval.distance;
-  return total;
-}
-
-function norwGetCurrentPace() {
-  const now = Date.now();
-  const recent = norwState.gpsPoints.filter(p => now - p.time < 30000);
-  if (recent.length < 2) return null;
-  const first = recent[0];
-  const last = recent[recent.length - 1];
-  const dist = haversine(first.lat, first.lon, last.lat, last.lon);
-  const timeSec = (last.time - first.time) / 1000;
-  if (dist < 0.005 || timeSec < 5) return null;
-  const paceSecPerKm = timeSec / dist;
-  return paceSecPerKm;
-}
-
-function norwFormatPace(secPerKm) {
-  if (!secPerKm || secPerKm > 3600) return '--:--';
-  const m = Math.floor(secPerKm / 60);
-  const s = Math.floor(secPerKm % 60);
-  return m + ':' + s.toString().padStart(2, '0');
-}
-
-function norwGetTotalElevGain() {
-  let total = 0;
-  norwState.intervals.forEach(iv => total += iv.elevGain);
-  if (norwState.currentInterval) total += norwState.currentInterval.elevGain;
-  return total;
-}
-
-function norwUpdateMetrics() {
-  const distEl = document.getElementById('norw-dist');
-  const paceEl = document.getElementById('norw-pace');
-  const elevEl = document.getElementById('norw-elev');
-  if (distEl) distEl.textContent = norwGetTotalDistance().toFixed(2);
-  if (paceEl) paceEl.textContent = norwFormatPace(norwGetCurrentPace());
-  if (elevEl) elevEl.textContent = Math.round(norwGetTotalElevGain());
-}
-
-// ── Live Graph (running screen) ───────────────────────────────
-function norwRenderLiveGraph() {
-  const canvas = document.getElementById('norw-live-graph');
-  if (!canvas) return;
-  const hrData = norwState.hrTimeline;
-  const paceData = norwState.paceTimeline;
-  if (hrData.length < 2 && paceData.length < 2) return;
-
-  const ctx = canvas.getContext('2d');
-  const dpr = window.devicePixelRatio || 1;
-  const rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
-  ctx.scale(dpr, dpr);
-  const W = rect.width;
-  const H = rect.height;
-  const PAD_L = 32, PAD_R = 32, PAD_T = 8, PAD_B = 4;
-  const plotW = W - PAD_L - PAD_R;
-  const plotH = H - PAD_T - PAD_B;
-
-  // X axis = distance (km)
-  const totalDist = norwGetTotalDistance();
-  const maxDist = Math.max(totalDist, 0.1); // avoid /0
-
-  // Build distance lookup from GPS points for mapping timeline t -> distance
-  const gpsPoints = norwState.gpsPoints;
-  // Map a timestamp (seconds since start) to cumulative distance at that time
-  function distAtTime(tSec) {
-    const tMs = norwState.startTime + tSec * 1000;
-    let cumDist = 0;
-    for (let i = 1; i < gpsPoints.length; i++) {
-      if (gpsPoints[i].time > tMs) break;
-      cumDist += haversine(gpsPoints[i-1].lat, gpsPoints[i-1].lon, gpsPoints[i].lat, gpsPoints[i].lon);
-    }
-    return cumDist;
-  }
-
-  // HR axis
-  const hrMin = 80;
-  const hrMax = hrData.length > 0 ? Math.max(NORW_MAX_HR + 5, Math.max(...hrData.map(d => d.hr)) + 5) : NORW_MAX_HR + 5;
-  // Pace axis (inverted: lower pace = higher)
-  const paceMin = 180, paceMax = 600;
-
-  const xOf = (dist) => PAD_L + (dist / maxDist) * plotW;
-  const yHR = (hr) => PAD_T + plotH - ((Math.min(Math.max(hr, hrMin), hrMax) - hrMin) / (hrMax - hrMin)) * plotH;
-  const yPace = (p) => PAD_T + plotH - ((paceMax - Math.min(Math.max(p, paceMin), paceMax)) / (paceMax - paceMin)) * plotH;
-
-  // Clear
-  ctx.clearRect(0, 0, W, H);
-
-  // Zone target bands
-  const bounds = norwGetZoneBounds(norwState.restingHR);
-  const z4 = bounds[3], z2 = bounds[1];
-  ctx.fillStyle = 'rgba(230,126,34,0.12)';
-  ctx.fillRect(PAD_L, yHR(z4.hi), plotW, yHR(z4.lo) - yHR(z4.hi));
-  ctx.fillStyle = 'rgba(46,204,113,0.12)';
-  ctx.fillRect(PAD_L, yHR(z2.hi), plotW, yHR(z2.lo) - yHR(z2.hi));
-
-  // HR axis labels (left)
-  ctx.strokeStyle = 'rgba(255,255,255,0.06)';
-  ctx.fillStyle = 'rgba(255,255,255,0.35)';
-  ctx.font = '9px system-ui';
-  ctx.textAlign = 'right';
-  for (let hr = 100; hr <= hrMax; hr += 20) {
-    const y = yHR(hr);
-    if (y < PAD_T || y > PAD_T + plotH) continue;
-    ctx.beginPath(); ctx.moveTo(PAD_L, y); ctx.lineTo(PAD_L + plotW, y); ctx.stroke();
-    ctx.fillText(hr + '', PAD_L - 3, y + 3);
-  }
-
-  // Pace axis labels (right)
-  ctx.textAlign = 'left';
-  for (let p = 240; p <= 540; p += 60) {
-    const y = yPace(p);
-    if (y < PAD_T || y > PAD_T + plotH) continue;
-    ctx.fillText(Math.floor(p / 60) + ':' + (p % 60).toString().padStart(2, '0'), PAD_L + plotW + 3, y + 3);
-  }
-
-  // Pace line (behind HR)
-  if (paceData.length > 1) {
-    ctx.beginPath();
-    ctx.strokeStyle = '#3498db';
-    ctx.lineWidth = 1.5;
-    ctx.globalAlpha = 0.7;
-    paceData.forEach((d, i) => {
-      const x = xOf(distAtTime(d.t));
-      const y = yPace(d.pace);
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-  }
-
-  // HR line
-  if (hrData.length > 1) {
-    ctx.beginPath();
-    ctx.strokeStyle = '#e74c3c';
-    ctx.lineWidth = 2;
-    hrData.forEach((d, i) => {
-      const x = xOf(distAtTime(d.t));
-      const y = yHR(d.hr);
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-  }
-
-  // Legend
-  ctx.font = '9px system-ui';
-  ctx.textAlign = 'left';
-  ctx.fillStyle = '#e74c3c';
-  ctx.fillText('HR', PAD_L + 4, PAD_T + 10);
-  ctx.fillStyle = '#3498db';
-  ctx.fillText('Pace', PAD_L + 24, PAD_T + 10);
-  // Distance label bottom-right
-  ctx.fillStyle = 'rgba(255,255,255,0.35)';
-  ctx.textAlign = 'right';
-  ctx.fillText(totalDist.toFixed(2) + ' km', PAD_L + plotW, PAD_T + plotH - 2);
-}
 
 // ── Audio & Vibration ─────────────────────────────────────────
 function norwGetAudioCtx() {
@@ -2365,7 +2111,6 @@ function norwStart() {
   norwState.workDuration = parseInt(document.getElementById('norw-work-dur').value) * 60;
   norwState.recoveryDuration = parseInt(document.getElementById('norw-recov-dur').value) * 60;
   norwState.cycles = parseInt(document.getElementById('norw-cycles').value);
-  norwState.restingHR = parseInt(document.getElementById('norw-resting-hr').value);
 
   norwState.phase = 'work';
   norwState.currentCycle = 1;
@@ -2376,12 +2121,9 @@ function norwStart() {
   norwState.running = true;
   norwState.startTime = Date.now();
   norwState.intervals = [];
-  norwState.hrTimeline = [];
-  norwState.paceTimeline = [];
   norwState.currentInterval = norwNewInterval('work', 1);
 
   norwGetAudioCtx().resume();
-  norwStartGPS();
   norwRequestWakeLock();
 
   clearInterval(norwState.timerInterval);
@@ -2399,10 +2141,6 @@ function norwNewInterval(phase, cycle) {
     phase,
     cycle,
     duration: phase === 'work' ? norwState.workDuration : norwState.recoveryDuration,
-    hrSamples: [],
-    distance: 0,
-    elevGain: 0,
-    elevLoss: 0,
     startTime: Date.now(),
   };
 }
@@ -2511,7 +2249,7 @@ function norwSkip() {
 function norwStop() {
   if (!confirm('Stop the run? Data for the current interval will be lost.')) return;
   const iv = norwState.currentInterval;
-  if (iv && iv.hrSamples.length > 0) {
+  if (iv) {
     iv.endTime = Date.now();
     iv.duration = Math.round((iv.endTime - iv.startTime) / 1000);
     norwState.intervals.push(iv);
@@ -2522,7 +2260,6 @@ function norwStop() {
 function norwFinishSession() {
   norwState.running = false;
   clearInterval(norwState.timerInterval);
-  norwStopGPS();
   norwReleaseWakeLock();
   norwRenderSummary();
   showScreen('norw-summary');
@@ -2549,17 +2286,6 @@ function norwRenderRunning() {
   if (cycleEl) {
     cycleEl.textContent = `Cycle ${norwState.currentCycle} of ${norwState.cycles}`;
   }
-  // Target HR range
-  const rangeEl = document.getElementById('norw-target-range');
-  if (rangeEl) {
-    const target = norwGetTargetZone();
-    const bounds = norwGetZoneBounds(norwState.restingHR);
-    const range = bounds[target - 1];
-    const label = norwState.phase === 'work' ? 'Work target' : 'Recovery target';
-    rangeEl.textContent = `${label}: Z${target} (${range.lo}–${range.hi} bpm)`;
-  }
-  norwUpdateMetrics();
-  norwRenderLiveGraph();
 }
 
 async function norwRequestWakeLock() {
@@ -2579,49 +2305,17 @@ function norwReleaseWakeLock() {
 
 // ── Session Data ──────────────────────────────────────────────
 function norwBuildInterval(iv) {
-  const samples = iv.hrSamples;
-  const hrData = samples.length > 0 ? {
-    avg: Math.round(samples.reduce((a, b) => a + b, 0) / samples.length),
-    min: Math.min(...samples),
-    max: Math.max(...samples),
-    samples: samples,
-  } : { avg: 0, min: 0, max: 0, samples: [] };
-
   const durationSec = iv.endTime ? Math.round((iv.endTime - iv.startTime) / 1000) : iv.duration;
-  const paceSecPerKm = iv.distance > 0.01 ? durationSec / iv.distance : null;
-
   return {
     phase: iv.phase,
     cycle: iv.cycle,
     duration: durationSec,
-    hr: hrData,
-    distance_km: Math.round(iv.distance * 1000) / 1000,
-    pace_avg: norwFormatPace(paceSecPerKm),
-    elevation: {
-      gain_m: Math.round(iv.elevGain),
-      loss_m: Math.round(iv.elevLoss),
-    },
   };
 }
 
 function norwBuildSession() {
   const intervals = norwState.intervals.map(norwBuildInterval);
-  const allSamples = intervals.flatMap(iv => iv.hr.samples);
-  const totalDist = intervals.reduce((sum, iv) => sum + iv.distance_km, 0);
   const totalDuration = intervals.reduce((sum, iv) => sum + iv.duration, 0);
-  const totalElevGain = intervals.reduce((sum, iv) => sum + iv.elevation.gain_m, 0);
-  const totalElevLoss = intervals.reduce((sum, iv) => sum + iv.elevation.loss_m, 0);
-
-  const zoneTime = { z1: 0, z2: 0, z3: 0, z4: 0, z5: 0 };
-  intervals.forEach(iv => {
-    iv.hr.samples.forEach(hr => {
-      const z = norwGetZone(hr, norwState.restingHR);
-      if (z) zoneTime['z' + z]++;
-    });
-  });
-
-  const avgPaceSecPerKm = totalDist > 0.01 ? totalDuration / totalDist : null;
-
   const now = new Date();
   return {
     type: 'norwegian_4x4',
@@ -2629,23 +2323,11 @@ function norwBuildSession() {
     dateLocal: now.toISOString().slice(0, 10),
     duration_seconds: totalDuration,
     config: {
-      maxHR: NORW_MAX_HR,
-      restingHR: norwState.restingHR,
       workDuration: norwState.workDuration,
       recoveryDuration: norwState.recoveryDuration,
       cycles: norwState.cycles,
     },
     intervals,
-    totals: {
-      distance_km: Math.round(totalDist * 1000) / 1000,
-      avg_pace: norwFormatPace(avgPaceSecPerKm),
-      avg_hr: allSamples.length > 0 ? Math.round(allSamples.reduce((a, b) => a + b, 0) / allSamples.length) : 0,
-      max_hr: allSamples.length > 0 ? Math.max(...allSamples) : 0,
-      time_in_zone_seconds: zoneTime,
-      elevation: { gain_m: Math.round(totalElevGain), loss_m: Math.round(totalElevLoss) },
-    },
-    hrTimeline: norwState.hrTimeline,
-    paceTimeline: norwState.paceTimeline,
   };
 }
 
@@ -2673,177 +2355,10 @@ function norwRenderSummary() {
             </span>
             <span style="font-size:12px;color:var(--text-dim)">${Math.floor(iv.duration / 60)}:${(iv.duration % 60).toString().padStart(2, '0')}</span>
           </div>
-          <div class="norw-interval-grid">
-            <div class="norw-interval-stat">Avg HR<span>${iv.hr.avg || '--'}</span></div>
-            <div class="norw-interval-stat">Max HR<span>${iv.hr.max || '--'}</span></div>
-            <div class="norw-interval-stat">Dist<span>${iv.distance_km.toFixed(2)} km</span></div>
-            <div class="norw-interval-stat">Pace<span>${iv.pace_avg}</span></div>
-            <div class="norw-interval-stat">↑ Elev<span>${iv.elevation.gain_m} m</span></div>
-            <div class="norw-interval-stat">↓ Elev<span>${iv.elevation.loss_m} m</span></div>
-          </div>
         </div>
       `;
     });
     container.innerHTML = html;
-  }
-
-  const zoneBar = document.getElementById('norw-zone-bar');
-  if (zoneBar) {
-    const zt = session.totals.time_in_zone_seconds;
-    const total = zt.z1 + zt.z2 + zt.z3 + zt.z4 + zt.z5;
-    if (total > 0) {
-      zoneBar.innerHTML = [1, 2, 3, 4, 5].map(z => {
-        const pct = (zt['z' + z] / total * 100).toFixed(1);
-        const mins = Math.floor(zt['z' + z] / 60);
-        const secs = zt['z' + z] % 60;
-        return pct > 0
-          ? `<div style="width:${pct}%;background:${NORW_ZONE_COLORS[z]}" title="Z${z}: ${mins}:${secs.toString().padStart(2, '0')}"></div>`
-          : '';
-      }).join('');
-    }
-  }
-
-  const totalsEl = document.getElementById('norw-sum-totals');
-  if (totalsEl) {
-    const t = session.totals;
-    totalsEl.innerHTML = `
-      <div class="norw-totals-grid">
-        <div class="norw-interval-stat">Distance<span>${t.distance_km.toFixed(2)} km</span></div>
-        <div class="norw-interval-stat">Avg Pace<span>${t.avg_pace}</span></div>
-        <div class="norw-interval-stat">Avg HR<span>${t.avg_hr} bpm</span></div>
-        <div class="norw-interval-stat">Max HR<span>${t.max_hr} bpm</span></div>
-        <div class="norw-interval-stat">↑ Elevation<span>${t.elevation.gain_m} m</span></div>
-        <div class="norw-interval-stat">↓ Elevation<span>${t.elevation.loss_m} m</span></div>
-      </div>
-    `;
-  }
-
-  // Render HR & Pace graph (deferred to allow canvas to be visible)
-  setTimeout(() => norwRenderGraph(session), 50);
-}
-
-// ── Session Graph (summary — distance on X axis) ─────────────
-function norwRenderGraph(session) {
-  const canvas = document.getElementById('norw-graph');
-  if (!canvas || !session.hrTimeline || session.hrTimeline.length < 2) return;
-  const ctx = canvas.getContext('2d');
-  const dpr = window.devicePixelRatio || 1;
-  const rect = canvas.getBoundingClientRect();
-  canvas.width = rect.width * dpr;
-  canvas.height = rect.height * dpr;
-  ctx.scale(dpr, dpr);
-  const W = rect.width;
-  const H = rect.height;
-  const PAD_L = 40, PAD_R = 40, PAD_T = 12, PAD_B = 24;
-  const plotW = W - PAD_L - PAD_R;
-  const plotH = H - PAD_T - PAD_B;
-
-  const hrData = session.hrTimeline;
-  const paceData = session.paceTimeline || [];
-  const totalDist = session.totals.distance_km;
-  const maxDist = Math.max(totalDist, 0.1);
-
-  // Build cumulative distance from interval data for t->dist mapping
-  const gpsPoints = norwState.gpsPoints || [];
-  function distAtTime(tSec) {
-    const tMs = (session._startTime || norwState.startTime || 0) + tSec * 1000;
-    let cumDist = 0;
-    for (let i = 1; i < gpsPoints.length; i++) {
-      if (gpsPoints[i].time > tMs) break;
-      cumDist += haversine(gpsPoints[i-1].lat, gpsPoints[i-1].lon, gpsPoints[i].lat, gpsPoints[i].lon);
-    }
-    return cumDist;
-  }
-
-  const hrMin = 80;
-  const hrMax = Math.max(NORW_MAX_HR + 5, Math.max(...hrData.map(d => d.hr)) + 5);
-  const paceMin = 180, paceMax = 600;
-
-  const xOf = (dist) => PAD_L + (dist / maxDist) * plotW;
-  const yHR = (hr) => PAD_T + plotH - ((Math.min(Math.max(hr, hrMin), hrMax) - hrMin) / (hrMax - hrMin)) * plotH;
-  const yPace = (p) => PAD_T + plotH - ((paceMax - Math.min(Math.max(p, paceMin), paceMax)) / (paceMax - paceMin)) * plotH;
-
-  // Background — shade work/recovery intervals by distance
-  const intervals = session.intervals || [];
-  let distOffset = 0;
-  intervals.forEach(iv => {
-    const x1 = xOf(distOffset);
-    distOffset += iv.distance_km;
-    const x2 = xOf(distOffset);
-    ctx.fillStyle = iv.phase === 'work' ? 'rgba(231,76,60,0.08)' : 'rgba(46,204,113,0.08)';
-    ctx.fillRect(x1, PAD_T, x2 - x1, plotH);
-  });
-
-  // Zone target bands
-  const bounds = norwGetZoneBounds(session.config.restingHR);
-  const z4 = bounds[3], z2 = bounds[1];
-  ctx.fillStyle = 'rgba(230,126,34,0.12)';
-  ctx.fillRect(PAD_L, yHR(z4.hi), plotW, yHR(z4.lo) - yHR(z4.hi));
-  ctx.fillStyle = 'rgba(46,204,113,0.12)';
-  ctx.fillRect(PAD_L, yHR(z2.hi), plotW, yHR(z2.lo) - yHR(z2.hi));
-
-  // HR axis labels (left)
-  ctx.strokeStyle = 'rgba(255,255,255,0.08)';
-  ctx.fillStyle = 'rgba(255,255,255,0.4)';
-  ctx.font = '10px system-ui';
-  ctx.textAlign = 'right';
-  for (let hr = 100; hr <= hrMax; hr += 20) {
-    const y = yHR(hr);
-    if (y < PAD_T || y > PAD_T + plotH) continue;
-    ctx.beginPath(); ctx.moveTo(PAD_L, y); ctx.lineTo(PAD_L + plotW, y); ctx.stroke();
-    ctx.fillText(hr + '', PAD_L - 4, y + 3);
-  }
-
-  // Pace axis labels (right)
-  ctx.textAlign = 'left';
-  for (let p = 240; p <= 540; p += 60) {
-    const y = yPace(p);
-    if (y < PAD_T || y > PAD_T + plotH) continue;
-    ctx.fillText(Math.floor(p / 60) + ':' + (p % 60).toString().padStart(2, '0'), PAD_L + plotW + 4, y + 3);
-  }
-
-  // Distance axis labels
-  ctx.textAlign = 'center';
-  const distStep = maxDist > 4 ? 1 : 0.5;
-  for (let d = distStep; d < maxDist; d += distStep) {
-    const x = xOf(d);
-    ctx.fillText(d.toFixed(1) + 'km', x, PAD_T + plotH + 16);
-  }
-
-  // Pace line
-  if (paceData.length > 1) {
-    ctx.beginPath();
-    ctx.strokeStyle = '#3498db';
-    ctx.lineWidth = 1.5;
-    ctx.globalAlpha = 0.7;
-    paceData.forEach((d, i) => {
-      const x = xOf(distAtTime(d.t));
-      const y = yPace(d.pace);
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    });
-    ctx.stroke();
-    ctx.globalAlpha = 1;
-  }
-
-  // HR line
-  ctx.beginPath();
-  ctx.strokeStyle = '#e74c3c';
-  ctx.lineWidth = 2;
-  hrData.forEach((d, i) => {
-    const x = xOf(distAtTime(d.t));
-    const y = yHR(d.hr);
-    if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-  });
-  ctx.stroke();
-
-  // Legend
-  ctx.font = '11px system-ui';
-  ctx.fillStyle = '#e74c3c';
-  ctx.textAlign = 'left';
-  ctx.fillText('HR', PAD_L + 4, PAD_T + 12);
-  if (paceData.length > 1) {
-    ctx.fillStyle = '#3498db';
-    ctx.fillText('Pace', PAD_L + 28, PAD_T + 12);
   }
 }
 
@@ -2887,43 +2402,10 @@ async function norwSyncToSupabase(session) {
   }
 }
 
-// ── Export ─────────────────────────────────────────────────────
-function norwExportCSV() {
-  const session = norwBuildSession();
-  const headers = ['cycle', 'phase', 'duration_sec', 'avg_hr', 'min_hr', 'max_hr', 'distance_km', 'pace', 'elevation_gain_m', 'elevation_loss_m'];
-  const rows = session.intervals.map(iv => [
-    iv.cycle, iv.phase, iv.duration, iv.hr.avg, iv.hr.min, iv.hr.max,
-    iv.distance_km.toFixed(3), iv.pace_avg, iv.elevation.gain_m, iv.elevation.loss_m,
-  ].join(','));
-  const csv = [headers.join(','), ...rows].join('\n');
-  const blob = new Blob([csv], { type: 'text/csv' });
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(blob);
-  a.download = `norwegian_4x4_${session.dateLocal}.csv`;
-  a.click();
-  URL.revokeObjectURL(a.href);
-  showToast('CSV downloaded!');
-}
-
-function norwExportJSON() {
-  const session = norwBuildSession();
-  downloadJSON(session, `norwegian_4x4_${session.dateLocal}.json`);
-}
-
 function norwCleanup() {
   norwState.running = false;
   clearInterval(norwState.timerInterval);
-  norwStopGPS();
   norwReleaseWakeLock();
-  if (norwState.btDevice && norwState.btDevice.gatt && norwState.btDevice.gatt.connected) {
-    try {
-      if (norwState.btCharacteristic) {
-        norwState.btCharacteristic.stopNotifications();
-      }
-    } catch (e) { /* ignore */ }
-  }
-  norwState.currentHR = null;
-  norwState.hrConnected = false;
   norwState.currentInterval = null;
 }
 
