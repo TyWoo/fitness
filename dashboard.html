@@ -884,8 +884,14 @@
 
       // Upsert to Supabase (idempotent via external_id)
       if (sessions.length > 0) {
-        const { error } = await sb.from('cardio_sessions').upsert(sessions, { onConflict: 'external_id' });
-        if (error) console.error('Supabase upsert error:', error);
+        alert('Upserting ' + sessions.length + ' sessions. First: ' + JSON.stringify(sessions[0]).substring(0, 300));
+        const { data, error } = await sb.from('cardio_sessions').upsert(sessions, { onConflict: 'external_id' });
+        if (error) {
+          alert('Supabase upsert ERROR: ' + JSON.stringify(error));
+          console.error('Supabase upsert error:', error);
+        } else {
+          alert('Upsert success. Rows: ' + (data ? data.length : 'unknown'));
+        }
       }
 
       return { sessions };
