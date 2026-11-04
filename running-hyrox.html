@@ -314,6 +314,7 @@ async function showPolarPicker(sessionId){
     if(c.avg_hr) log.avgHr=c.avg_hr;
     if(!log.status) log.status='done';
     log._polarId=c.external_id||c.id;
+    delete _cardioCache[log._polarId]; // bust cache so analysis fetches fresh data
     save();
     renderPlan();
     setTimeout(()=>renderAnalysis(sessionId),100);
