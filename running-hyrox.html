@@ -148,6 +148,16 @@ th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04
 .metric .v{font-size:18px;font-weight:800;color:var(--ink)} .metric .l{font-size:11px;color:var(--muted);margin-top:2px}
 .progress-row{display:flex;align-items:center;gap:6px;font-size:13px;margin:4px 0}
 .progress-row .delta{font-weight:700} .progress-row .delta.better{color:var(--good)} .progress-row .delta.worse{color:var(--bad)}
+.verdict{margin:12px 0 6px;padding:12px 14px;border-radius:10px;font-size:14px;line-height:1.5}
+.verdict.pass{background:color-mix(in srgb,var(--good) 12%,var(--panel));border:1px solid color-mix(in srgb,var(--good) 35%,var(--line))}
+.verdict.warn{background:color-mix(in srgb,var(--warn) 12%,var(--panel));border:1px solid color-mix(in srgb,var(--warn) 35%,var(--line))}
+.verdict.fail{background:color-mix(in srgb,var(--bad) 12%,var(--panel));border:1px solid color-mix(in srgb,var(--bad) 35%,var(--line))}
+.verdict b{display:block;margin-bottom:4px;font-size:15px}
+.coach-tip{font-size:13px;color:var(--muted);margin:6px 0;padding-left:12px;border-left:3px solid var(--accent)}
+.eff-chart{display:flex;align-items:flex-end;gap:3px;height:60px;margin:8px 0}
+.eff-chart .bar{flex:1;background:var(--accent);border-radius:4px 4px 0 0;position:relative;min-width:16px;max-width:36px}
+.eff-chart .bar.cur{background:color-mix(in srgb,var(--accent) 100%,transparent);box-shadow:0 0 0 2px var(--accent)}
+.eff-chart .bar .lbl{position:absolute;bottom:-18px;left:50%;transform:translateX(-50%);font-size:10px;color:var(--muted);white-space:nowrap}
 @media (max-width:820px){
   .layout{grid-template-columns:1fr}
   .layout.showing .list{display:none}
@@ -686,6 +696,7 @@ function renderAnalysis(sessionId){
     if(!c){ el.innerHTML='<div class="analysis"><div class="small muted">Could not load Polar session data.</div></div>'; return; }
     const f=findSession(sessionId);
     const tags=f?f.s.tags:[];
+    const p=P();
     let html='<div class="analysis"><h3>Workout Analysis</h3>';
 
     // Summary metrics
@@ -700,14 +711,19 @@ function renderAnalysis(sessionId){
     if(c.max_hr) html+=`<div class="metric"><div class="v">${c.max_hr}</div><div class="l">Max HR</div></div>`;
     html+='</div>';
 
+    // ── COACHING VERDICT ──────────────────────────────────────
+    // Build signals to generate a coaching summary at the end
+    const signals=[];
+
     // HR zone breakdown
     let zs=null;
     try{ zs=typeof c.hr_zone_seconds==='string'?JSON.parse(c.hr_zone_seconds):c.hr_zone_seconds; }catch(e){}
+    const target=zoneTarget(tags);
+    let pctInTarget=null;
     if(zs){
       const total=(zs.z1||0)+(zs.z2||0)+(zs.z3||0)+(zs.z4||0)+(zs.z5||0);
       if(total>0){
         html+='<h4>HR Zone Breakdown</h4>';
-        const target=zoneTarget(tags);
         if(target) html+=`<div class="small muted" style="margin-bottom:6px">Target: ${target.desc}</div>`;
         html+='<div class="zone-bar">';
         for(let i=1;i<=5;i++){
@@ -720,12 +736,13 @@ function renderAnalysis(sessionId){
           html+=`<span class="z${i}">Z${i}: ${m}m (${Math.round(sec/total*100)}%)</span>`;
         }
         html+='</div>';
-        // Zone compliance check
         if(target){
           const inTarget=target.primary.reduce((a,z)=>a+(zs['z'+z]||0),0);
-          const pctInTarget=Math.round(inTarget/total*100);
+          pctInTarget=Math.round(inTarget/total*100);
           const ok=pctInTarget>=40;
           html+=`<div class="small" style="color:var(--${ok?'good':'warn'})"><b>${pctInTarget}%</b> of time in target zones (${target.label}) ${ok?'-- on target':'-- below target'}</div>`;
+          if(ok) signals.push({type:'pass',text:`Zone compliance: ${pctInTarget}% in target ${target.label}`});
+          else signals.push({type:'warn',text:`Only ${pctInTarget}% in target ${target.label} — ${tags.includes('aerobic')?'you pushed too hard, keep it easy':'spend more time in the work zones'}`});
         }
       }
     }
@@ -736,7 +753,7 @@ function renderAnalysis(sessionId){
     const splits=details&&details.km_splits;
     if(splits&&splits.length){
       html+='<h4>Per-km Splits</h4>';
-      const paces=splits.map(s=>s.pace).filter(p=>p>0);
+      const paces=splits.filter(s=>!s.partial).map(s=>s.pace).filter(p=>p>0);
       const avgSplitPace=paces.length?paces.reduce((a,b)=>a+b,0)/paces.length:0;
       html+='<div class="tscroll"><table class="splits-tbl"><tr><th>KM</th><th>Pace</th><th>HR</th><th>Time</th></tr>';
       splits.forEach(sp=>{
@@ -746,7 +763,28 @@ function renderAnalysis(sessionId){
       });
       html+='</table></div>';
 
-      // HR drift analysis for long runs (6+ km)
+      // Split consistency (coefficient of variation)
+      if(paces.length>=3){
+        const mean=paces.reduce((a,b)=>a+b,0)/paces.length;
+        const variance=paces.reduce((a,p)=>a+Math.pow(p-mean,2),0)/paces.length;
+        const cv=Math.round(Math.sqrt(variance)/mean*100);
+        const fastest=Math.min(...paces), slowest=Math.max(...paces);
+        const range=slowest-fastest;
+        if(cv<=3) signals.push({type:'pass',text:`Even pacing: ${fmtPace(fastest)}–${fmtPace(slowest)}/km spread (${cv}% CV)`});
+        else if(cv<=6) signals.push({type:'warn',text:`Moderate pacing variance: ${fmtPace(fastest)}–${fmtPace(slowest)}/km spread (${cv}% CV) — aim for tighter splits`});
+        else signals.push({type:'warn',text:`Wide pacing swing: ${fmtPace(fastest)}–${fmtPace(slowest)}/km (${cv}% CV) — start slower and lock in a rhythm`});
+      }
+
+      // Negative/positive split
+      if(paces.length>=4){
+        const half=Math.floor(paces.length/2);
+        const firstAvg=paces.slice(0,half).reduce((a,b)=>a+b,0)/half;
+        const secondAvg=paces.slice(half).reduce((a,b)=>a+b,0)/(paces.length-half);
+        if(secondAvg<firstAvg*0.98) signals.push({type:'pass',text:`Negative split: closed faster (${fmtPace(firstAvg)} → ${fmtPace(secondAvg)}/km)`});
+        else if(secondAvg>firstAvg*1.05) signals.push({type:'warn',text:`Positive split: faded late (${fmtPace(firstAvg)} → ${fmtPace(secondAvg)}/km) — bank less early`});
+      }
+
+      // HR drift for long runs
       if(splits.length>=6&&(tags.includes('aerobic')||tags.includes('threshold'))){
         const half=Math.floor(splits.length/2);
         const firstHalf=splits.slice(0,half).filter(s=>s.hr);
@@ -768,13 +806,15 @@ function renderAnalysis(sessionId){
           html+=`<div class="metric"><div class="v">${fmtPace(avgPace1)}</div><div class="l">1st half pace</div></div>`;
           html+=`<div class="metric"><div class="v">${fmtPace(avgPace2)}</div><div class="l">2nd half pace</div></div>`;
           html+=`</div>`;
-          html+=`<div class="small muted">${Math.abs(driftPct)<=5?'Excellent pacing -- minimal cardiac drift.':driftPct<=10?'Normal drift. Heart worked harder to maintain pace in the second half.':'Significant drift -- consider starting slower or fueling during the run.'}</div>`;
+          if(Math.abs(driftPct)<=5) signals.push({type:'pass',text:`Minimal cardiac drift (${driftPct>0?'+':''}${driftPct}%) — excellent pacing`});
+          else if(driftPct<=10) signals.push({type:'warn',text:`${driftPct}% cardiac drift — normal, but HR crept up to maintain pace`});
+          else signals.push({type:'fail',text:`${driftPct}% cardiac drift — start 10-15s/km slower or fuel mid-run`});
         }
       }
     }
 
-    // Progress comparison: find similar sessions from earlier weeks
-    const p=P();
+    // ── AEROBIC EFFICIENCY TREND ──────────────────────────────
+    // Pace per HR beat across similar sessions — tracks fitness over time
     if(f){
       const curTags=f.s.tags;
       const primaryTag=curTags[0];
@@ -783,39 +823,165 @@ function renderAnalysis(sessionId){
       sessionsOf(p).forEach(({w,s})=>{
         if(s.id===sessionId) return;
         if(!s.tags.includes(primaryTag)) return;
-        const wn=w.n||0;
-        if(wn>=curWeekNum) return;
         const sLog=peek(s.id);
-        if(!sLog._polarId||sLog.status!=='done') return;
-        similar.push({w,s,log:sLog});
+        if(sLog.status!=='done'||!sLog.dur||!sLog.dist||!sLog.avgHr) return;
+        const sPace=sLog.dur*60/sLog.dist; // sec/km
+        similar.push({w,s,log:sLog,pace:sPace,hr:sLog.avgHr,eff:sPace/sLog.avgHr,wn:w.n||0});
       });
-      if(similar.length){
+
+      // Current session efficiency
+      const curEff=(avgPace&&c.avg_hr)?avgPace/c.avg_hr:null;
+
+      // Efficiency chart (pace per HR beat — lower = fitter)
+      if(similar.length>=1&&curEff){
+        const allEff=[...similar.sort((a,b)=>a.wn-b.wn),{w:f.w,s:f.s,eff:curEff,pace:avgPace,hr:c.avg_hr,wn:curWeekNum,isCur:true}];
+        const maxEff=Math.max(...allEff.map(e=>e.eff));
+        const minEff=Math.min(...allEff.map(e=>e.eff));
+
+        html+='<h4>Aerobic Efficiency Trend</h4>';
+        html+='<div class="small muted" style="margin-bottom:6px">Pace per heartbeat (sec/km ÷ bpm) — lower = fitter at same effort</div>';
+        html+='<div class="eff-chart">';
+        allEff.forEach(e=>{
+          const pct=maxEff>minEff?30+70*((e.eff-minEff)/(maxEff-minEff)):70;
+          html+=`<div class="bar${e.isCur?' cur':''}" style="height:${pct}%" title="${e.w.label}: ${e.eff.toFixed(3)} (${fmtPace(e.pace)}/km @ ${e.hr}bpm)"><span class="lbl">${e.w.label||''}</span></div>`;
+        });
+        html+='</div><div style="height:22px"></div>';
+
+        // Efficiency delta vs most recent previous
+        const prev=similar[similar.length-1];
+        if(prev){
+          const effDelta=curEff-prev.eff;
+          const effPct=Math.round(effDelta/prev.eff*100);
+          const better=effDelta<0;
+          if(better) signals.push({type:'pass',text:`Efficiency improved ${Math.abs(effPct)}% vs ${prev.w.label} — faster at similar HR`});
+          else if(effPct>5) signals.push({type:'warn',text:`Efficiency dropped ${effPct}% vs ${prev.w.label} — slower at similar HR (fatigue, heat, or terrain?)`});
+        }
+
+        // Long-term trend (first vs current)
+        if(similar.length>=3){
+          const first=similar[0];
+          const trendDelta=curEff-first.eff;
+          const trendPct=Math.round(trendDelta/first.eff*100);
+          if(trendDelta<0) html+=`<div class="progress-row">Since ${esc(first.w.label)}: <span class="delta better">${Math.abs(trendPct)}% more efficient</span></div>`;
+          else if(trendPct>3) html+=`<div class="progress-row">Since ${esc(first.w.label)}: <span class="delta worse">${trendPct}% less efficient</span> — may need more recovery</div>`;
+        }
+      }
+
+      // ── PROGRESS VS EARLIER WEEKS ──────────────────────────
+      const progSimilar=similar.filter(s=>s.wn<curWeekNum);
+      if(progSimilar.length){
         html+='<h4>Progress vs Earlier Weeks</h4>';
-        html+='<div class="tscroll"><table class="splits-tbl"><tr><th>Session</th><th>Pace</th><th>Avg HR</th><th>Dist</th><th>Dur</th></tr>';
-        // Current session row
-        html+=`<tr style="font-weight:700;background:color-mix(in srgb,var(--accent) 10%,transparent)"><td>This session</td><td>${avgPace?fmtPace(avgPace)+'/km':'--'}</td><td>${c.avg_hr||'--'}</td><td>${dist||'--'}km</td><td>${dur||'--'}m</td></tr>`;
-        similar.reverse().forEach(({w,s,log})=>{
-          const pace=log.dur&&log.dist?(log.dur*60/log.dist):null;
-          html+=`<tr><td><a href="#" data-go="${s.id}">${esc(w.label)} ${s.day||''}</a></td><td>${pace?fmtPace(pace)+'/km':'--'}</td><td>${log.avgHr||'--'}</td><td>${log.dist||'--'}km</td><td>${log.dur||'--'}m</td></tr>`;
+        html+='<div class="tscroll"><table class="splits-tbl"><tr><th>Session</th><th>Pace</th><th>Avg HR</th><th>Dist</th><th>Dur</th><th>Efficiency</th></tr>';
+        html+=`<tr style="font-weight:700;background:color-mix(in srgb,var(--accent) 10%,transparent)"><td>This session</td><td>${avgPace?fmtPace(avgPace)+'/km':'--'}</td><td>${c.avg_hr||'--'}</td><td>${dist||'--'}km</td><td>${dur||'--'}m</td><td>${curEff?curEff.toFixed(3):'--'}</td></tr>`;
+        progSimilar.forEach(({w,s,log,pace,eff})=>{
+          html+=`<tr><td><a href="#" data-go="${s.id}">${esc(w.label)} ${s.day||''}</a></td><td>${fmtPace(pace)+'/km'}</td><td>${log.avgHr||'--'}</td><td>${log.dist||'--'}km</td><td>${log.dur||'--'}m</td><td>${eff?eff.toFixed(3):'--'}</td></tr>`;
         });
         html+='</table></div>';
 
-        // Pace trend delta
-        const latest=similar[similar.length-1];
-        if(latest&&latest.log.dur&&latest.log.dist&&avgPace){
-          const prevPace=latest.log.dur*60/latest.log.dist;
-          const delta=avgPace-prevPace;
-          const pctDelta=Math.round(delta/prevPace*100);
+        // Pace trend delta vs most recent
+        const latest=progSimilar[progSimilar.length-1];
+        if(latest&&avgPace){
+          const delta=avgPace-latest.pace;
+          const pctDelta=Math.round(delta/latest.pace*100);
           const better=delta<0;
           html+=`<div class="progress-row">${better?'Faster':'Slower'} than ${esc(latest.w.label)}: <span class="delta ${better?'better':'worse'}">${better?'':'+'}${Math.round(delta)}s/km (${better?'':'+'}${pctDelta}%)</span></div>`;
+          if(better) signals.push({type:'pass',text:`${Math.abs(Math.round(delta))}s/km faster than ${latest.w.label}`});
+          else if(pctDelta>3) signals.push({type:'warn',text:`${Math.round(delta)}s/km slower than ${latest.w.label} — could be fatigue or harder session`});
         }
       }
+    }
+
+    // ── COACHING VERDICT ──────────────────────────────────────
+    if(signals.length){
+      const fails=signals.filter(s=>s.type==='fail');
+      const warns=signals.filter(s=>s.type==='warn');
+      const passes=signals.filter(s=>s.type==='pass');
+      const grade=fails.length?'fail':warns.length>passes.length?'warn':'pass';
+      const tagName=tags.includes('aerobic')?'Aerobic':tags.includes('threshold')?'Threshold':tags.includes('speed')?'Speed':tags.includes('hyrox')?'HYROX Race Pace':tags.includes('test')?'Benchmark':tags[0]||'Workout';
+      const gradeLabel=grade==='pass'?tagName+' session — nailed it':grade==='warn'?tagName+' session — room to improve':tagName+' session — missed the target';
+
+      html+=`<h4>Coaching Summary</h4>`;
+      html+=`<div class="verdict ${grade}"><b>${gradeLabel}</b>`;
+      signals.forEach(s=>{
+        const icon=s.type==='pass'?'✓':s.type==='warn'?'⚠':'✗';
+        html+=`<div style="margin:3px 0;color:var(--${s.type==='pass'?'good':s.type==='warn'?'warn':'bad'})">${icon} ${s.text}</div>`;
+      });
+      html+='</div>';
+
+      // Contextual coaching tip based on session type
+      const tip=getCoachingTip(tags,signals,{pctInTarget,avgPace,dur,dist,curHr:c.avg_hr});
+      if(tip) html+=`<div class="coach-tip">${tip}</div>`;
+    } else if(dur||dist) {
+      // No signals but we have data — give basic feedback
+      html+='<h4>Coaching Summary</h4>';
+      html+=`<div class="verdict pass"><b>Session logged</b><div style="margin:3px 0">Sync more sessions to unlock pace trends and efficiency tracking.</div></div>`;
     }
 
     html+='</div>';
     el.innerHTML=html;
     el.querySelectorAll('[data-go]').forEach(a=>a.onclick=e=>{e.preventDefault(); openSession(+a.dataset.go);});
   });
+}
+
+function getCoachingTip(tags,signals,data){
+  const hasWarn=signals.some(s=>s.type==='warn'||s.type==='fail');
+  const hasFade=signals.some(s=>s.text&&s.text.includes('faded'));
+  const hasDrift=signals.some(s=>s.text&&s.text.includes('drift'));
+  const gotFaster=signals.some(s=>s.type==='pass'&&s.text&&s.text.includes('faster'));
+  const gotEfficient=signals.some(s=>s.type==='pass'&&s.text&&s.text.includes('Efficiency improved'));
+
+  if(tags.includes('aerobic')){
+    if(data.pctInTarget!=null&&data.pctInTarget<40)
+      return 'You went too hard for an aerobic day. I know it feels slow, but 80% of your HYROX training adaptations — mitochondrial density, fat oxidation, capillary growth — happen in Z1-Z2. If you can\'t hold a full conversation, you\'re above aerobic pace. Slow down 15-20s/km next time. The speed will come.';
+    if(hasDrift)
+      return 'Your HR climbed in the second half which means you either started too fast or need more fueling on runs over 60 min. For your next aerobic session, set a hard cap: if HR hits Z3, walk until it drops back to Z2. This discipline is what separates race-day blowups from negative splits.';
+    if(gotEfficient)
+      return 'Your aerobic engine is getting stronger — you\'re running faster at the same HR, which is exactly the adaptation we want. This is the payoff from staying disciplined in Z2. Keep stacking these sessions. In HYROX, the athlete with the biggest aerobic base wins the second half of the race.';
+    if(!hasWarn)
+      return 'Clean aerobic session. This is the bread and butter of HYROX prep — you\'re building the engine that lets you sustain effort through 8 running legs and 8 stations. The key metric to watch: does your pace at the same HR get faster week over week? That\'s your fitness trend.';
+    return 'Aerobic days should feel almost too easy. If you\'re wondering "am I going slow enough?" — the answer is usually no. Your Z2 pace will feel embarrassingly slow at first, but in 4-6 weeks you\'ll be running 20-30s/km faster at the same HR. Trust the process.';
+  }
+
+  if(tags.includes('threshold')){
+    if(data.pctInTarget!=null&&data.pctInTarget>=40&&!hasWarn)
+      return 'Solid threshold session. This is your lactate turnpoint work — the intensity where your body learns to clear lactate as fast as it produces it. In HYROX, this is your 1km run pace between stations. Track your rep times above: when you run the same pace at a lower HR, or faster at the same HR, that\'s real fitness.';
+    if(data.pctInTarget!=null&&data.pctInTarget<30)
+      return 'Your effort didn\'t hit the threshold window. Threshold reps should feel "comfortably hard" — you can get out maybe 3-4 words but not a sentence. That\'s Z3-Z4. If you were mostly in Z1-Z2, you need to push harder on the work intervals. If you redlined into Z5, back off 5-10s/km. The adaptation happens at threshold, not above it.';
+    if(hasFade)
+      return 'Your reps faded, which usually means you went out too hot on the first interval. For HYROX, I\'d rather see you run the same pace for every rep than go fast then blow up. Next session: set your first rep 5s/km slower than you think you should. Your last rep should be your fastest.';
+    if(gotFaster)
+      return 'Getting faster at threshold pace — this directly translates to your HYROX run legs. When race day comes, your 1km runs between stations will feel more sustainable because you\'ve pushed this ceiling higher. Keep logging rep times to track the trend.';
+    return 'Threshold work is the most race-specific intensity for HYROX. Your body needs to handle sustained effort in Z3-Z4 while fatigued. Log your rep times (above) each week — when the same pace starts feeling easier, you\'re ready to push the target.';
+  }
+
+  if(tags.includes('speed')){
+    if(hasFade)
+      return 'Your speed reps fell off, which means either the recovery was too short or you started too fast. Cut 1-2 reps next time and take full recovery (HR back below 120 before the next rep). In speed work, every rep should be high quality — 3 sharp reps beats 6 sloppy ones. We\'re training the neuromuscular system, not grinding.';
+    if(!hasWarn)
+      return 'Good speed session. These reps raise your velocity ceiling — the faster your top end, the easier your HYROX race pace feels by comparison. A 5:30/km race pace feels very different when your max is 4:00 vs 4:30. Focus: stay tall, drive the knees, quick ground contact. Form matters most when you\'re tired.';
+    return 'Speed day is about running fast with good form, not about suffering. Take 2-3 min recovery between reps — your HR should drop to Z1 before the next one. If you can\'t hit within 5% of your first rep by the last rep, you need more rest or fewer reps.';
+  }
+
+  if(tags.includes('hyrox')){
+    if(hasFade)
+      return 'You faded in the second half — this is the #1 race-day killer in HYROX. The fix is counterintuitive: start slower. Your first 2-3 run legs should feel boring. Athletes who go out at their "comfortable" pace almost always blow up by station 5. Next session, hold back 10-15s/km for the first half and see if you can close faster.';
+    if(data.pctInTarget!=null&&data.pctInTarget>=50&&!hasWarn)
+      return 'Race-pace simulation dialed in. You held Z3-Z4 which is exactly where HYROX lives. The key question: can you maintain this pace AFTER a sled push or farmers carry? That\'s what the program is building toward. Watch your efficiency number — when you run this pace at a lower HR, your race-day ceiling goes up.';
+    if(!hasWarn)
+      return 'Clean HYROX simulation. This pace should feel sustainable — like you could hold it for another 20 min. If it felt maximal, you\'re too fast. In the race, you\'ll have 8 stations draining your legs between runs. Practice restraint now so you have something left for the wall balls and lunges.';
+    return 'HYROX race pace is Z3-Z4 sustained. If you spent too much time in Z5, you\'re simulating a sprint, not a race. Real HYROX is a 60-90 min grind. Even pacing is everything — your first km should be the same pace as your last km. Start practicing that discipline now.';
+  }
+
+  if(tags.includes('test')){
+    if(gotFaster||gotEfficient)
+      return 'Benchmark improved — the training is working. Save these numbers. We\'ll retest in a few weeks under the same conditions (same route, time of day, fueling). The real signal isn\'t just the time — it\'s the HR. Faster at the same HR = genuine fitness. Same time at lower HR = also a win.';
+    return 'Benchmark day is about data, not ego. Run it on the same route and conditions every time. We\'re looking for two things over the training block: (1) faster pace at the same HR, or (2) same pace at a lower HR. Both mean your aerobic engine is growing. Don\'t compare across different routes or weather.';
+  }
+
+  if(tags.includes('strength'))
+    return 'Strength sessions support your running — don\'t stress about the cardio data here. The HR pattern from lifting (spiky, high rest periods) will look messy compared to running. Focus on the lifts, not the watch.';
+
+  return null;
 }
 
 /* ---------- boot ---------- */
