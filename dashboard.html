@@ -842,13 +842,15 @@
 
       // Proxy through our serverless function to avoid CORS
       const exRes = await fetch('/api/polar-exercises', { headers });
+      const exText = await exRes.text();
       if (!exRes.ok) {
-        const errText = await exRes.text();
-        console.error('Polar exercises failed:', exRes.status, errText);
+        alert('Polar API error ' + exRes.status + ': ' + exText.substring(0, 300));
         return { sessions: [] };
       }
-      const exercises = await exRes.json();
-      console.log('Polar exercises fetched:', exercises.length, exercises);
+      let exercises;
+      try { exercises = JSON.parse(exText); } catch(e) { alert('JSON parse error: ' + exText.substring(0, 300)); return { sessions: [] }; }
+      alert('Polar returned ' + (Array.isArray(exercises) ? exercises.length + ' exercises' : 'non-array: ' + exText.substring(0, 300)));
+      if (!Array.isArray(exercises)) return { sessions: [] };
 
       const sessions = [];
       for (const ex of exercises) {
