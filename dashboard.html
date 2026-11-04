@@ -836,7 +836,7 @@
       window.location.href = `${POLAR_AUTH_URL}?response_type=code&client_id=${POLAR_CLIENT_ID}&redirect_uri=${redirectUri}`;
     }
 
-    async function polarFetch(token, userId) {
+    async function polarFetch(token) {
       const headers = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
       const base = 'https://www.polaraccesslink.com/v3';
 
@@ -1512,17 +1512,16 @@
           setPolarUserId(params.polar_user || '');
           window.history.replaceState(null, '', window.location.pathname);
           // Auto-sync on connect
-          handlePolarSync(params.polar_token, params.polar_user);
+          handlePolarSync(params.polar_token);
         }
       }, []);
 
-      const handlePolarSync = async (token, userId) => {
+      const handlePolarSync = async (token) => {
         const t = token || polarToken;
-        const u = userId || polarUserId;
-        if (!t || !u) return;
+        if (!t) return;
         setPolarLoading(true);
         try {
-          await polarFetch(t, u);
+          await polarFetch(t);
           await reloadCardio();
           setPolarSynced(true);
         } catch (e) {
