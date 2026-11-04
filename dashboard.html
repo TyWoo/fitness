@@ -848,7 +848,7 @@
       }
       const exercises = await exRes.json();
       if (!Array.isArray(exercises)) return { sessions: [] };
-      console.log('Polar exercises fetched:', exercises.length, 'First exercise keys:', exercises[0] ? Object.keys(exercises[0]).join(',') : 'none', 'duration:', exercises[0]?.duration, 'distance:', exercises[0]?.distance);
+      if (exercises[0]) alert('First exercise: ' + JSON.stringify(exercises[0]).substring(0, 500));
 
       const sessions = [];
       for (const ex of exercises) {
