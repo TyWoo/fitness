@@ -864,8 +864,20 @@
         const sport = ex.detailed_sport_info || ex.sport || 'Workout';
         const hr = ex.heart_rate || {};
 
+        // Parse HR zones from exercise list (array of {index, lower_limit, upper_limit, in_zone})
+        let hrZoneSec = null;
+        if (ex.heart_rate_zones && Array.isArray(ex.heart_rate_zones)) {
+          hrZoneSec = {};
+          for (const z of ex.heart_rate_zones) {
+            const durZ = (z.in_zone || '').match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:([\d.]+)S)?/);
+            const sec = durZ ? Math.round(parseInt(durZ[1]||0)*3600 + parseInt(durZ[2]||0)*60 + parseFloat(durZ[3]||0)) : 0;
+            hrZoneSec['z' + z.index] = sec;
+          }
+        }
+
         sessions.push({
           external_id:      'polar-' + ex.id,
+          polar_exercise_id: String(ex.id),
           date_local:       dateLocal,
           started_at:       startedAt,
           source:           'polar',
@@ -879,6 +891,7 @@
           avg_pace_km:      paceKm,
           avg_hr:           hr.average || null,
           max_hr:           hr.maximum || null,
+          hr_zone_seconds:  hrZoneSec,
         });
       }
 
@@ -895,16 +908,105 @@
           const { error } = await sb.from('cardio_sessions').insert(newSessions);
           if (error) console.error('Supabase insert error:', error);
         }
-        // Update existing rows (fixes duration, distance, etc.)
+        // Update existing rows (fixes duration, distance, HR zones, etc.)
         for (const s of updateSessions) {
           const rowId = existingMap.get(s.external_id);
-          const { external_id, ...updates } = s;
+          const { external_id, polar_exercise_id, ...updates } = s;
           await sb.from('cardio_sessions').update(updates).eq('id', rowId);
         }
         console.log(`Polar sync: ${newSessions.length} new, ${updateSessions.length} updated`);
       }
 
+      // Fetch TCX detail for recent sessions (last 14 days) to get HR samples + per-km splits
+      const twoWeeksAgo = new Date(Date.now() - 14*24*60*60*1000).toISOString().slice(0,10);
+      const recentExercises = exercises.filter(ex => (ex.start_time || '').slice(0,10) >= twoWeeksAgo);
+      console.log(`Fetching TCX for ${recentExercises.length} recent exercises...`);
+      for (const ex of recentExercises) {
+        try {
+          const tcxRes = await fetch('/api/polar-exercise-tcx?id=' + encodeURIComponent(ex.id), { headers });
+          if (!tcxRes.ok) { console.warn('TCX fetch failed for', ex.id, tcxRes.status); continue; }
+          const tcxXml = await tcxRes.text();
+          const parsed = parseTCXDetail(tcxXml);
+          if (parsed) {
+            const extId = 'polar-' + ex.id;
+            await sb.from('cardio_sessions').update({
+              hr_samples: parsed.hrSamples.length ? JSON.stringify(parsed.hrSamples) : null,
+              details: parsed.details ? JSON.stringify(parsed.details) : null,
+            }).eq('external_id', extId);
+          }
+        } catch (e) { console.warn('TCX parse error for', ex.id, e); }
+      }
+
       return { sessions };
+    }
+
+    // Parse TCX XML to extract HR samples and per-km split data
+    function parseTCXDetail(xml) {
+      const doc = new DOMParser().parseFromString(xml, 'text/xml');
+      const tps = doc.getElementsByTagName('Trackpoint');
+      if (!tps.length) return null;
+
+      const points = [];
+      for (const tp of tps) {
+        const timeEl = tp.getElementsByTagName('Time')[0];
+        const hrEl = tp.getElementsByTagName('Value')[0];
+        const distEl = tp.getElementsByTagName('DistanceMeters')[0];
+        points.push({
+          time: timeEl ? new Date(timeEl.textContent).getTime() : null,
+          hr: hrEl ? parseInt(hrEl.textContent) || null : null,
+          dist: distEl ? parseFloat(distEl.textContent) || 0 : 0,
+        });
+      }
+
+      // HR samples (every ~10s to keep payload small)
+      const hrSamples = [];
+      let lastSampleTime = 0;
+      for (const p of points) {
+        if (p.hr && p.time && p.time - lastSampleTime >= 10000) {
+          hrSamples.push(p.hr);
+          lastSampleTime = p.time;
+        }
+      }
+
+      // Per-km splits with pace and avg HR
+      const kmSplits = [];
+      let kmStart = 0, kmStartTime = points[0]?.time || 0, kmHrSum = 0, kmHrN = 0, kmIdx = 1;
+      for (const p of points) {
+        if (p.hr) { kmHrSum += p.hr; kmHrN++; }
+        if (p.dist >= kmIdx * 1000) {
+          const elapsed = (p.time - kmStartTime) / 1000;
+          const pace = elapsed > 0 ? elapsed : null; // sec per km
+          kmSplits.push({
+            km: kmIdx,
+            time: elapsed,
+            pace: pace,
+            hr: kmHrN ? Math.round(kmHrSum / kmHrN) : null,
+          });
+          kmStart = kmIdx * 1000;
+          kmStartTime = p.time;
+          kmHrSum = 0; kmHrN = 0;
+          kmIdx++;
+        }
+      }
+      // Final partial km
+      const lastPt = points[points.length - 1];
+      if (lastPt && lastPt.dist > (kmIdx - 1) * 1000) {
+        const partialDist = lastPt.dist - (kmIdx - 1) * 1000;
+        const elapsed = (lastPt.time - kmStartTime) / 1000;
+        const pace = partialDist > 100 ? Math.round(elapsed / (partialDist / 1000)) : null;
+        kmSplits.push({
+          km: kmIdx,
+          partial: Math.round(partialDist),
+          time: elapsed,
+          pace: pace,
+          hr: kmHrN ? Math.round(kmHrSum / kmHrN) : null,
+        });
+      }
+
+      return {
+        hrSamples,
+        details: kmSplits.length ? { km_splits: kmSplits } : null,
+      };
     }
 
     // ── GOOGLE FIT ───────────────────────────────────────────────
