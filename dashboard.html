@@ -840,19 +840,14 @@
       const headers = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
       const base = 'https://www.polaraccesslink.com/v3';
 
-      // List exercises from the last 30 days (no transaction = always re-fetchable)
-      console.log('Calling Polar API: GET /v3/exercises');
-      const exRes = await fetch(`${base}/exercises`, { headers });
-      console.log('Polar API response status:', exRes.status);
-      const exText = await exRes.text();
-      console.log('Polar API raw response:', exText.substring(0, 500));
+      // Proxy through our serverless function to avoid CORS
+      const exRes = await fetch('/api/polar-exercises', { headers });
       if (!exRes.ok) {
-        alert('Polar API error ' + exRes.status + ': ' + exText.substring(0, 200));
+        const errText = await exRes.text();
+        console.error('Polar exercises failed:', exRes.status, errText);
         return { sessions: [] };
       }
-      let exercises;
-      try { exercises = JSON.parse(exText); } catch(e) { alert('Polar JSON parse error: ' + e.message); return { sessions: [] }; }
-      alert('Polar returned ' + exercises.length + ' exercises. First: ' + JSON.stringify(exercises[0] || {}).substring(0, 200));
+      const exercises = await exRes.json();
       console.log('Polar exercises fetched:', exercises.length, exercises);
 
       const sessions = [];
@@ -1523,17 +1518,14 @@
 
       const handlePolarSync = async (token) => {
         const t = token || polarToken;
-        console.log('handlePolarSync called, token exists:', !!t);
-        if (!t) { alert('No Polar token found'); return; }
+        if (!t) return;
         setPolarLoading(true);
         try {
-          const result = await polarFetch(t);
-          console.log('polarFetch result:', result);
+          await polarFetch(t);
           await reloadCardio();
           setPolarSynced(true);
         } catch (e) {
           console.error('Polar sync error:', e);
-          alert('Polar sync error: ' + e.message);
         } finally {
           setPolarLoading(false);
         }
