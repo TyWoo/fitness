@@ -842,40 +842,50 @@
 
       // Proxy through our serverless function to avoid CORS
       const exRes = await fetch('/api/polar-exercises', { headers });
-      const exText = await exRes.text();
       if (!exRes.ok) {
-        alert('Polar API error ' + exRes.status + ': ' + exText.substring(0, 300));
+        console.error('Polar exercises failed:', exRes.status, await exRes.text());
         return { sessions: [] };
       }
-      let exercises;
-      try { exercises = JSON.parse(exText); } catch(e) { alert('JSON parse error: ' + exText.substring(0, 300)); return { sessions: [] }; }
-      alert('Polar returned ' + (Array.isArray(exercises) ? exercises.length + ' exercises' : 'non-array: ' + exText.substring(0, 300)));
+      const exercises = await exRes.json();
       if (!Array.isArray(exercises)) return { sessions: [] };
+      console.log('Polar exercises fetched:', exercises.length);
 
       const sessions = [];
       for (const ex of exercises) {
-        // /v3/exercises uses snake_case fields
         const dateLocal = (ex.start_time || '').slice(0, 10);
+        const startedAt = ex.start_time || null;
         const durMatch = (ex.duration || '').match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
-        const durMin = durMatch
-          ? Math.round((parseInt(durMatch[1]||0)*60 + parseInt(durMatch[2]||0) + parseInt(durMatch[3]||0)/60))
+        const durSec = durMatch
+          ? (parseInt(durMatch[1]||0)*3600 + parseInt(durMatch[2]||0)*60 + parseInt(durMatch[3]||0))
           : null;
+        const distM = ex.distance != null ? Math.round(ex.distance) : null;
+        const distKm = distM != null ? Math.round(distM / 10) / 100 : null;
+        const paceKm = (durSec && distKm) ? Math.round(durSec / 60 / distKm * 100) / 100 : null;
+        const sport = ex.detailed_sport_info || ex.sport || 'Workout';
         const hr = ex.heart_rate || {};
 
         sessions.push({
-          date_local:   dateLocal,
-          source:       'polar',
-          session_name: ex.detailed_sport_info || ex.sport || 'Workout',
-          duration_min: durMin,
-          avg_hr:       hr.average || null,
-          max_hr:       hr.maximum || null,
-          hrv_rmssd:    null,
+          external_id:      'polar-' + ex.id,
+          date_local:       dateLocal,
+          started_at:       startedAt,
+          source:           'polar',
+          sport_type:       sport,
+          activity_type:    sport.toLowerCase().includes('run') ? 'running'
+                          : sport.toLowerCase().includes('walk') ? 'walking'
+                          : sport.toLowerCase().includes('bik') ? 'cycling' : 'other',
+          duration_seconds: durSec,
+          distance_meters:  distM,
+          distance_km:      distKm,
+          avg_pace_km:      paceKm,
+          avg_hr:           hr.average || null,
+          max_hr:           hr.maximum || null,
         });
       }
 
-      // Upsert to Supabase (idempotent — safe to re-sync)
+      // Upsert to Supabase (idempotent via external_id)
       if (sessions.length > 0) {
-        await sb.from('cardio_sessions').upsert(sessions, { onConflict: 'date_local,source' });
+        const { error } = await sb.from('cardio_sessions').upsert(sessions, { onConflict: 'external_id' });
+        if (error) console.error('Supabase upsert error:', error);
       }
 
       return { sessions };
