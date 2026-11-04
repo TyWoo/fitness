@@ -758,13 +758,25 @@ function buildPlanFeedback(tags,splits,c,f){
         else fb.push({type:'warn',text:`Threshold intensity too low: avg work HR ${avgWorkHr} is mid-Z3, needs to be ${targetZone} (${z4Lo}-${z4Hi}). Start reps at your target pace from rep 1, not a gradual build`});
       }
 
-      // Pacing consistency within work phase
-      if(workPaces.length>=3){
-        const fastest=Math.min(...workPaces), slowest=Math.max(...workPaces);
+      // Pacing consistency within work phase — use GAP if elevation data available
+      const hasEle=work.some(s=>(s.ele_gain||0)>0||(s.ele_loss||0)>0);
+      const workGaps=hasEle?work.map(s=>{
+        const net=(s.ele_gain||0)-(s.ele_loss||0); const grade=net/1000*100; return s.pace-(grade*12);
+      }):workPaces;
+      const gapLabel=hasEle?'GAP':'pacing';
+      if(workGaps.length>=3){
+        const fastest=Math.min(...workGaps), slowest=Math.max(...workGaps);
         const range=slowest-fastest;
-        if(range<=15) fb.push({type:'pass',text:`Work pacing: ${fmtPace(fastest)}-${fmtPace(slowest)}/km — tight and consistent`});
-        else if(range<=30) fb.push({type:'warn',text:`Work pacing: ${fmtPace(fastest)}-${fmtPace(slowest)}/km (${Math.round(range)}s spread) — tighten to within 15s`});
-        else fb.push({type:'warn',text:`Work pacing: ${fmtPace(fastest)}-${fmtPace(slowest)}/km (${Math.round(range)}s spread) — too wide. Set your first rep at ${fmtPace(fastest+15)}/km not ${fmtPace(slowest)}/km`});
+        if(range<=15) fb.push({type:'pass',text:`Work ${gapLabel}: ${fmtPace(fastest)}-${fmtPace(slowest)}/km — tight and consistent${hasEle?' (elevation-adjusted)':''}`});
+        else if(range<=30) fb.push({type:'warn',text:`Work ${gapLabel}: ${fmtPace(fastest)}-${fmtPace(slowest)}/km (${Math.round(range)}s spread) — tighten to within 15s${hasEle?' (elevation-adjusted)':''}`});
+        else fb.push({type:'warn',text:`Work ${gapLabel}: ${fmtPace(fastest)}-${fmtPace(slowest)}/km (${Math.round(range)}s spread) — too wide${hasEle?' even after elevation adjustment':'. Set your first rep at '+fmtPace(fastest+15)+'/km not '+fmtPace(slowest)+'/km'}`});
+      }
+
+      // Flag significant elevation in work phase
+      if(hasEle){
+        const totalWorkGain=work.reduce((a,s)=>a+(s.ele_gain||0),0);
+        const totalWorkLoss=work.reduce((a,s)=>a+(s.ele_loss||0),0);
+        if(totalWorkGain>50||totalWorkLoss>50) fb.push({type:'pass',text:`Work phase elevation: +${totalWorkGain}m / -${totalWorkLoss}m — pace differences partly explained by terrain`});
       }
 
       // Check for negative split in work (good for threshold)
@@ -798,7 +810,11 @@ function buildPlanFeedback(tags,splits,c,f){
     // Aerobic: most splits should be Z1-Z2
     const aboveZ2=fullSplits.filter(s=>s.hr>z2Hi);
     const pctAbove=Math.round(aboveZ2.length/fullSplits.length*100);
+    // Check if HR spikes correlate with uphill sections
+    const aboveZ2WithClimb=aboveZ2.filter(s=>(s.ele_gain||0)>15);
+    const hillExplained=aboveZ2.length>0&&aboveZ2WithClimb.length>=aboveZ2.length*0.6;
     if(pctAbove<=10) fb.push({type:'pass',text:`${100-pctAbove}% of km splits stayed in Z1-Z2 — disciplined aerobic effort`});
+    else if(hillExplained) fb.push({type:'warn',text:`${pctAbove}% of km splits went above Z2, but mostly on uphills (+${aboveZ2WithClimb.reduce((a,s)=>a+(s.ele_gain||0),0)}m gain). Walk the hills to keep HR in Z2 — the aerobic adaptation happens at low intensity`});
     else if(pctAbove<=30) fb.push({type:'warn',text:`${pctAbove}% of km splits went above Z2 (${z2Hi}bpm) — walk to bring HR down when it drifts up. The adaptation happens in Z2, not Z3`});
     else fb.push({type:'fail',text:`${pctAbove}% of km splits above Z2 — this was not an aerobic session. Slow down 20-30s/km or walk hills. Conversational pace means you can speak full sentences`});
 
@@ -868,6 +884,12 @@ function renderAnalysis(sessionId){
     if(avgPace) html+=`<div class="metric"><div class="v">${fmtPace(avgPace)}</div><div class="l">Avg Pace /km</div></div>`;
     if(c.avg_hr) html+=`<div class="metric"><div class="v">${c.avg_hr}</div><div class="l">Avg HR</div></div>`;
     if(c.max_hr) html+=`<div class="metric"><div class="v">${c.max_hr}</div><div class="l">Max HR</div></div>`;
+    // Elevation from details
+    let details=null;
+    try{ details=typeof c.details==='string'?JSON.parse(c.details):c.details; }catch(e){}
+    const totalEleGain=details?.ele_gain||0;
+    const totalEleLoss=details?.ele_loss||0;
+    if(totalEleGain||totalEleLoss) html+=`<div class="metric"><div class="v">+${totalEleGain}m</div><div class="l">Elevation</div></div>`;
     html+='</div>';
 
     // ── COACHING VERDICT ──────────────────────────────────────
@@ -907,20 +929,33 @@ function renderAnalysis(sessionId){
     }
 
     // Per-km splits
-    let details=null;
-    try{ details=typeof c.details==='string'?JSON.parse(c.details):c.details; }catch(e){}
+    if(!details) try{ details=typeof c.details==='string'?JSON.parse(c.details):c.details; }catch(e){}
     const splits=details&&details.km_splits;
     if(splits&&splits.length){
+      const hasEle=splits.some(s=>(s.ele_gain||0)>0||(s.ele_loss||0)>0);
+      const totalGain=details?.ele_gain||splits.reduce((a,s)=>a+(s.ele_gain||0),0);
+      const totalLoss=details?.ele_loss||splits.reduce((a,s)=>a+(s.ele_loss||0),0);
       html+='<h4>Per-km Splits</h4>';
+      if(hasEle&&(totalGain||totalLoss)) html+=`<div class="small muted" style="margin-bottom:6px">Total elevation: +${totalGain}m / -${totalLoss}m</div>`;
       const paces=splits.filter(s=>!s.partial).map(s=>s.pace).filter(p=>p>0);
       const avgSplitPace=paces.length?paces.reduce((a,b)=>a+b,0)/paces.length:0;
-      html+='<div class="tscroll"><table class="splits-tbl"><tr><th>KM</th><th>Pace</th><th>HR</th><th>Time</th></tr>';
+      html+=`<div class="tscroll"><table class="splits-tbl"><tr><th>KM</th><th>Pace</th>${hasEle?'<th>GAP</th>':''}<th>HR</th>${hasEle?'<th>Elev</th>':''}<th>Time</th></tr>`;
       splits.forEach(sp=>{
         const label=sp.partial?sp.km+' ('+Math.round(sp.partial)+'m)':sp.km;
         const paceClass=sp.pace&&avgSplitPace?(sp.pace<avgSplitPace*0.97?'pace-fast':sp.pace>avgSplitPace*1.03?'pace-slow':''):'';
-        html+=`<tr><td>${label}</td><td class="${paceClass}">${fmtPace(sp.pace)}/km</td><td>${sp.hr||'--'}</td><td>${fmtSec(sp.time)}</td></tr>`;
+        // Grade Adjusted Pace: ~12s/km per 1% grade (approx Jack Daniels formula)
+        const netEle=(sp.ele_gain||0)-(sp.ele_loss||0);
+        const distM=sp.partial||1000;
+        const gradePct=distM>0?netEle/distM*100:0;
+        const gapAdj=gradePct*12; // seconds per km adjustment
+        const gap=sp.pace?sp.pace-gapAdj:null;
+        const gapClass=gap&&avgSplitPace?(gap<avgSplitPace*0.97?'pace-fast':gap>avgSplitPace*1.03?'pace-slow':''):'';
+        const eleStr=hasEle?`<td class="small muted">${netEle>=0?'+':''}${netEle}m</td>`:'';
+        const gapStr=hasEle?`<td class="${gapClass}">${gap?fmtPace(gap)+'/km':'--'}</td>`:'';
+        html+=`<tr><td>${label}</td><td class="${paceClass}">${fmtPace(sp.pace)}/km</td>${gapStr}<td>${sp.hr||'--'}</td>${eleStr}<td>${fmtSec(sp.time)}</td></tr>`;
       });
       html+='</table></div>';
+      if(hasEle) html+='<div class="small muted" style="margin-top:4px">GAP = Grade Adjusted Pace (flat-equivalent effort)</div>';
 
       // Split consistency (coefficient of variation)
       if(paces.length>=3){

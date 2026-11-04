@@ -972,10 +972,12 @@
         const timeEl = tp.getElementsByTagName('Time')[0];
         const hrEl = tp.getElementsByTagName('Value')[0];
         const distEl = tp.getElementsByTagName('DistanceMeters')[0];
+        const altEl = tp.getElementsByTagName('AltitudeMeters')[0];
         points.push({
           time: timeEl ? new Date(timeEl.textContent).getTime() : null,
           hr: hrEl ? parseInt(hrEl.textContent) || null : null,
           dist: distEl ? parseFloat(distEl.textContent) || 0 : 0,
+          alt: altEl ? parseFloat(altEl.textContent) : null,
         });
       }
 
@@ -989,23 +991,35 @@
         }
       }
 
-      // Per-km splits with pace and avg HR
+      // Per-km splits with pace, avg HR, and elevation
       const kmSplits = [];
       let kmStart = 0, kmStartTime = points[0]?.time || 0, kmHrSum = 0, kmHrN = 0, kmIdx = 1;
+      let kmEleGain = 0, kmEleLoss = 0, prevAlt = null, kmStartAlt = null;
       for (const p of points) {
         if (p.hr) { kmHrSum += p.hr; kmHrN++; }
+        if (p.alt != null) {
+          if (kmStartAlt == null) kmStartAlt = p.alt;
+          if (prevAlt != null) {
+            const d = p.alt - prevAlt;
+            if (d > 0) kmEleGain += d; else kmEleLoss += Math.abs(d);
+          }
+          prevAlt = p.alt;
+        }
         if (p.dist >= kmIdx * 1000) {
           const elapsed = (p.time - kmStartTime) / 1000;
-          const pace = elapsed > 0 ? elapsed : null; // sec per km
+          const pace = elapsed > 0 ? elapsed : null;
           kmSplits.push({
             km: kmIdx,
             time: elapsed,
             pace: pace,
             hr: kmHrN ? Math.round(kmHrSum / kmHrN) : null,
+            ele_gain: Math.round(kmEleGain),
+            ele_loss: Math.round(kmEleLoss),
           });
           kmStart = kmIdx * 1000;
           kmStartTime = p.time;
           kmHrSum = 0; kmHrN = 0;
+          kmEleGain = 0; kmEleLoss = 0; kmStartAlt = p.alt;
           kmIdx++;
         }
       }
@@ -1021,12 +1035,18 @@
           time: elapsed,
           pace: pace,
           hr: kmHrN ? Math.round(kmHrSum / kmHrN) : null,
+          ele_gain: Math.round(kmEleGain),
+          ele_loss: Math.round(kmEleLoss),
         });
       }
 
+      // Total elevation
+      const totalGain = kmSplits.reduce((a, s) => a + (s.ele_gain || 0), 0);
+      const totalLoss = kmSplits.reduce((a, s) => a + (s.ele_loss || 0), 0);
+
       return {
         hrSamples,
-        details: kmSplits.length ? { km_splits: kmSplits } : null,
+        details: kmSplits.length ? { km_splits: kmSplits, ele_gain: totalGain, ele_loss: totalLoss } : null,
       };
     }
 
