@@ -687,6 +687,164 @@ function zoneTarget(tags){
   return null;
 }
 
+function buildPlanFeedback(tags,splits,c,f){
+  const fb=[];
+  if(!splits||!splits.length||!c) return fb;
+  const z=zones(); // [{z:1,lo,hi}, ...]
+  const z2Hi=z[1]?.hi||143, z3Lo=z[2]?.lo||143, z3Hi=z[2]?.hi||154, z4Lo=z[3]?.lo||154, z4Hi=z[3]?.hi||166;
+  const fullSplits=splits.filter(s=>!s.partial);
+  if(!fullSplits.length) return fb;
+
+  // Detect phases from split patterns
+  // Warmup: initial splits with HR < Z3
+  // Strides/transition: splits with very slow avg pace (>8min/km) = lots of rest mixed in
+  // Work: core splits at elevated HR and faster pace
+  // Cooldown: final splits where pace slows after work phase
+  const phases=fullSplits.map((sp,i)=>({...sp,i,
+    zone: sp.hr<=z2Hi?'z12':sp.hr<=z3Hi?'z3':sp.hr<=z4Hi?'z4':'z5',
+    slow: sp.pace>480 // >8:00/km
+  }));
+
+  // Find work block boundaries
+  let workStart=-1, workEnd=-1;
+  for(let i=0;i<phases.length;i++){
+    if(workStart<0 && !phases[i].slow && (phases[i].zone==='z3'||phases[i].zone==='z4'||phases[i].zone==='z5') && phases[i].pace<420) workStart=i;
+    if(workStart>=0 && !phases[i].slow && (phases[i].zone==='z3'||phases[i].zone==='z4'||phases[i].zone==='z5')) workEnd=i;
+  }
+
+  const warmup=workStart>0?phases.slice(0,workStart):[];
+  const strides=phases.filter(p=>p.slow);
+  const work=workStart>=0&&workEnd>=workStart?phases.slice(workStart,workEnd+1).filter(p=>!p.slow):[];
+  const cooldown=workEnd>=0&&workEnd<phases.length-1?phases.slice(workEnd+1):[];
+
+  if(tags.includes('threshold')||tags.includes('speed')){
+    // ── WARMUP CHECK ──
+    if(warmup.length){
+      const wuDur=warmup.reduce((a,s)=>a+s.time,0);
+      const wuHrOk=warmup.every(s=>s.hr<=z2Hi);
+      if(wuDur>=600&&wuDur<=900&&wuHrOk) fb.push({type:'pass',text:`Warmup: ${Math.round(wuDur/60)}min in Z1-Z2 — good preparation`});
+      else if(wuDur<600) fb.push({type:'warn',text:`Warmup only ${Math.round(wuDur/60)}min — aim for 10-15min easy to prime aerobic system`});
+      else if(!wuHrOk) fb.push({type:'warn',text:`Warmup HR went above Z2 — keep it genuinely easy before the work starts`});
+      else fb.push({type:'pass',text:`Warmup: ${Math.round(wuDur/60)}min at easy effort`});
+    } else if(workStart===0){
+      fb.push({type:'warn',text:'No warmup detected — start with 10-15min easy running before threshold reps'});
+    }
+
+    // ── STRIDES CHECK ──
+    if(strides.length) fb.push({type:'pass',text:`Strides/drills detected (${strides.length} slow km with rest) — good activation`});
+
+    // ── WORK PHASE ──
+    if(work.length){
+      const targetZone=tags.includes('threshold')?'Z4':'Z4-Z5';
+      const targetLo=tags.includes('threshold')?z4Lo:z4Lo;
+      const workHrs=work.map(s=>s.hr).filter(Boolean);
+      const workPaces=work.map(s=>s.pace).filter(p=>p>0);
+      const avgWorkHr=workHrs.length?Math.round(workHrs.reduce((a,b)=>a+b,0)/workHrs.length):null;
+      const avgWorkPace=workPaces.length?workPaces.reduce((a,b)=>a+b,0)/workPaces.length:null;
+      const inTargetZone=workHrs.filter(hr=>hr>=targetLo).length;
+      const pctInTarget=workHrs.length?Math.round(inTargetZone/workHrs.length*100):0;
+
+      // Note: per-km HR blends work + float recovery, so actual rep HR is ~5-8bpm higher
+      fb.push({type:'pass',text:`Work phase: ${work.length} km at avg ${fmtPace(avgWorkPace)}/km, avg HR ${avgWorkHr||'--'} bpm`});
+
+      if(tags.includes('threshold')){
+        // Per-km blends 1000m rep + 200m float, so HR reads ~5-8bpm low
+        const adjustedHrs=workHrs.map(hr=>hr+6); // approximate rep HR
+        const adjInTarget=adjustedHrs.filter(hr=>hr>=z4Lo).length;
+        const adjPct=adjustedHrs.length?Math.round(adjInTarget/adjustedHrs.length*100):0;
+
+        if(adjPct>=60) fb.push({type:'pass',text:`Threshold intensity: estimated rep HR in ${targetZone} for ~${adjPct}% of work km (accounting for float recovery blending)`});
+        else if(pctInTarget>=30) fb.push({type:'warn',text:`Threshold intensity: avg work HR ${avgWorkHr} is upper Z3, borderline ${targetZone}. Per-km averages include 200m float which drags HR down. Actual rep HR was likely ~${(avgWorkHr||0)+6} — push 5-10s/km faster to solidly reach ${targetZone}`});
+        else fb.push({type:'warn',text:`Threshold intensity too low: avg work HR ${avgWorkHr} is mid-Z3, needs to be ${targetZone} (${z4Lo}-${z4Hi}). Start reps at your target pace from rep 1, not a gradual build`});
+      }
+
+      // Pacing consistency within work phase
+      if(workPaces.length>=3){
+        const fastest=Math.min(...workPaces), slowest=Math.max(...workPaces);
+        const range=slowest-fastest;
+        if(range<=15) fb.push({type:'pass',text:`Work pacing: ${fmtPace(fastest)}-${fmtPace(slowest)}/km — tight and consistent`});
+        else if(range<=30) fb.push({type:'warn',text:`Work pacing: ${fmtPace(fastest)}-${fmtPace(slowest)}/km (${Math.round(range)}s spread) — tighten to within 15s`});
+        else fb.push({type:'warn',text:`Work pacing: ${fmtPace(fastest)}-${fmtPace(slowest)}/km (${Math.round(range)}s spread) — too wide. Set your first rep at ${fmtPace(fastest+15)}/km not ${fmtPace(slowest)}/km`});
+      }
+
+      // Check for negative split in work (good for threshold)
+      if(workPaces.length>=4){
+        const firstThird=workPaces.slice(0,Math.ceil(workPaces.length/3));
+        const lastThird=workPaces.slice(-Math.ceil(workPaces.length/3));
+        const earlyAvg=firstThird.reduce((a,b)=>a+b,0)/firstThird.length;
+        const lateAvg=lastThird.reduce((a,b)=>a+b,0)/lastThird.length;
+        if(lateAvg<earlyAvg-10) fb.push({type:'pass',text:`Work negative split: first reps ${fmtPace(earlyAvg)}/km → last reps ${fmtPace(lateAvg)}/km — strong finish`});
+        else if(lateAvg>earlyAvg+10) fb.push({type:'warn',text:`Work faded: first reps ${fmtPace(earlyAvg)}/km → last reps ${fmtPace(lateAvg)}/km — start more conservatively`});
+      }
+    } else {
+      fb.push({type:'warn',text:'Could not detect a clear work phase — check that the session included structured intervals'});
+    }
+
+    // ── COOLDOWN CHECK ──
+    if(cooldown.length){
+      const cdDur=cooldown.reduce((a,s)=>a+s.time,0);
+      const cdHrs=cooldown.map(s=>s.hr).filter(Boolean);
+      const cdAvgHr=cdHrs.length?Math.round(cdHrs.reduce((a,b)=>a+b,0)/cdHrs.length):null;
+      if(cdDur>=600&&cdAvgHr&&cdAvgHr<=z2Hi) fb.push({type:'pass',text:`Cooldown: ${Math.round(cdDur/60)}min at avg HR ${cdAvgHr} (Z1-Z2) — proper recovery`});
+      else if(cdDur<300) fb.push({type:'warn',text:`Cooldown only ${Math.round(cdDur/60)}min — aim for 10-15min easy jog to flush lactate and start recovery`});
+      else if(cdAvgHr&&cdAvgHr>z2Hi) fb.push({type:'warn',text:`Cooldown HR still ${cdAvgHr} (Z3+) — slow to a walk until HR drops below ${z2Hi}. Recovery starts when HR comes down, not when you stop running`});
+      else fb.push({type:'pass',text:`Cooldown: ${Math.round(cdDur/60)}min`});
+    } else {
+      fb.push({type:'warn',text:'No cooldown detected — add 10-15min easy jog after your last rep to accelerate recovery'});
+    }
+  }
+
+  if(tags.includes('aerobic')){
+    // Aerobic: most splits should be Z1-Z2
+    const aboveZ2=fullSplits.filter(s=>s.hr>z2Hi);
+    const pctAbove=Math.round(aboveZ2.length/fullSplits.length*100);
+    if(pctAbove<=10) fb.push({type:'pass',text:`${100-pctAbove}% of km splits stayed in Z1-Z2 — disciplined aerobic effort`});
+    else if(pctAbove<=30) fb.push({type:'warn',text:`${pctAbove}% of km splits went above Z2 (${z2Hi}bpm) — walk to bring HR down when it drifts up. The adaptation happens in Z2, not Z3`});
+    else fb.push({type:'fail',text:`${pctAbove}% of km splits above Z2 — this was not an aerobic session. Slow down 20-30s/km or walk hills. Conversational pace means you can speak full sentences`});
+
+    // Check for even pacing
+    const paces=fullSplits.map(s=>s.pace).filter(p=>p>0);
+    if(paces.length>=4){
+      const firstQ=paces.slice(0,Math.floor(paces.length/4));
+      const lastQ=paces.slice(-Math.floor(paces.length/4));
+      const earlyAvg=firstQ.reduce((a,b)=>a+b,0)/firstQ.length;
+      const lateAvg=lastQ.reduce((a,b)=>a+b,0)/lastQ.length;
+      if(Math.abs(lateAvg-earlyAvg)<=20) fb.push({type:'pass',text:`Even pacing throughout — first quarter ${fmtPace(earlyAvg)}/km, last quarter ${fmtPace(lateAvg)}/km`});
+      else if(lateAvg>earlyAvg+20) fb.push({type:'warn',text:`Pace faded: ${fmtPace(earlyAvg)}/km early → ${fmtPace(lateAvg)}/km late — either start slower or fuel/hydrate during the run`});
+    }
+  }
+
+  if(tags.includes('hyrox')){
+    // HYROX race pace: should be sustained Z3-Z4
+    const inZ34=fullSplits.filter(s=>s.hr>=z3Lo&&s.hr<=z4Hi);
+    const pctZ34=Math.round(inZ34.length/fullSplits.length*100);
+    if(pctZ34>=70) fb.push({type:'pass',text:`${pctZ34}% of km splits in race-pace zone (Z3-Z4) — dialed in`});
+    else if(pctZ34>=40) fb.push({type:'warn',text:`Only ${pctZ34}% in Z3-Z4 — HYROX race pace should feel sustainably hard for the full distance`});
+    else fb.push({type:'fail',text:`Only ${pctZ34}% in race-pace zone — either too easy (Z1-Z2) or too hard (Z5). Lock into Z3-Z4 from km 1`});
+
+    // Check second-half fade
+    if(fullSplits.length>=6){
+      const half=Math.floor(fullSplits.length/2);
+      const firstPace=fullSplits.slice(0,half).reduce((a,s)=>a+s.pace,0)/half;
+      const secondPace=fullSplits.slice(half).reduce((a,s)=>a+s.pace,0)/(fullSplits.length-half);
+      if(secondPace>firstPace*1.05) fb.push({type:'warn',text:`Second half ${Math.round(secondPace-firstPace)}s/km slower — in HYROX, the athlete who slows down least wins. Start 10s/km slower to hold pace through all 8 legs`});
+      else if(secondPace<firstPace*0.98) fb.push({type:'pass',text:`Negative split — closed stronger. This is how you want to race HYROX`});
+    }
+  }
+
+  if(tags.includes('test')){
+    // Benchmark: check pacing consistency and provide data summary
+    const paces=fullSplits.map(s=>s.pace).filter(p=>p>0);
+    if(paces.length>=3){
+      const fastest=Math.min(...paces), slowest=Math.max(...paces);
+      if(slowest-fastest<=20) fb.push({type:'pass',text:`Even benchmark pacing: ${fmtPace(fastest)}-${fmtPace(slowest)}/km — reliable data for retesting`});
+      else fb.push({type:'warn',text:`Benchmark pacing varied: ${fmtPace(fastest)}-${fmtPace(slowest)}/km — aim for more even effort to make retest comparisons valid`});
+    }
+  }
+
+  return fb;
+}
+
 function renderAnalysis(sessionId){
   const el=document.getElementById('analysisPanel');
   if(!el) return;
@@ -892,6 +1050,15 @@ function renderAnalysis(sessionId){
       }
     }
 
+    // ── PLAN VS ACTUAL ──────────────────────────────────────
+    const planFeedback=buildPlanFeedback(tags,splits,c,f);
+    if(planFeedback.length){
+      html+='<h4>Plan vs Actual</h4>';
+      planFeedback.forEach(fb=>{
+        signals.push(fb);
+      });
+    }
+
     // ── COACHING VERDICT ──────────────────────────────────────
     if(signals.length){
       const fails=signals.filter(s=>s.type==='fail');
@@ -913,7 +1080,6 @@ function renderAnalysis(sessionId){
       const tip=getCoachingTip(tags,signals,{pctInTarget,avgPace,dur,dist,curHr:c.avg_hr});
       if(tip) html+=`<div class="coach-tip">${tip}</div>`;
     } else if(dur||dist) {
-      // No signals but we have data — give basic feedback
       html+='<h4>Coaching Summary</h4>';
       html+=`<div class="verdict pass"><b>Session logged</b><div style="margin:3px 0">Sync more sessions to unlock pace trends and efficiency tracking.</div></div>`;
     }
