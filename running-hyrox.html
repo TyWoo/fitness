@@ -232,7 +232,7 @@ function save(){ S._ts=Date.now(); try{ localStorage.setItem(KEY, JSON.stringify
 
 /* ---------- Polar link + TCX upload ---------- */
 function polarFetchSessions(){
-  return fetch(SB_URL+'/cardio_sessions?source=eq.polar&order=date_local.desc&limit=60',{
+  return fetch(SB_URL+'/cardio_sessions?source=eq.polar&external_id=not.like.polar-test-*&order=date_local.desc&limit=60',{
     headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}
   }).then(r=>r.ok?r.json():[]).catch(()=>[]);
 }
@@ -268,7 +268,7 @@ let _polarCacheTs = 0;
 async function polarGetAll(){
   if(_polarCache && Date.now()-_polarCacheTs<30000) return _polarCache;
   try{
-    const r=await fetch(SB_URL+'/cardio_sessions?source=eq.polar&order=date_local.desc,started_at.desc&limit=120',{
+    const r=await fetch(SB_URL+'/cardio_sessions?source=eq.polar&external_id=not.like.polar-test-*&order=date_local.desc,started_at.desc&limit=120',{
       headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}
     });
     _polarCache=r.ok?await r.json():[];
@@ -655,7 +655,7 @@ let _cardioCache = {};
 async function fetchCardioDetail(polarId){
   if(_cardioCache[polarId]) return _cardioCache[polarId];
   try{
-    const r=await fetch(SB_URL+'/cardio_sessions?or=(external_id.eq.'+encodeURIComponent(polarId)+',id.eq.'+encodeURIComponent(polarId)+')&limit=1',{
+    const r=await fetch(SB_URL+'/cardio_sessions?external_id=eq.'+encodeURIComponent(polarId)+'&limit=1',{
       headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}
     });
     const rows=r.ok?await r.json():[];
