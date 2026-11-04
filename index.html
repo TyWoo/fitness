@@ -3037,33 +3037,30 @@ async function hyroxAddBenchmark() {
 // ── Home Integration ──────────────────────────────────────────
 
 function hyroxRenderHomeCard() {
-  var todaySession = hyroxGetToday();
-  if (todaySession && todaySession.template_id !== 'rest') {
-    var r = todaySession.resolved;
-    return '<div class="hyrox-home-card" onclick="hyroxShowDaySession(\'' + todaySession.date_local + '\')">' +
-      '<div class="session-type" style="color:' + r.color + '">' + todaySession.phase.replace('_', ' ') + ' - HYROX Program</div>' +
-      '<div class="session-name">' + r.name + '</div>' +
-      '<div class="session-meta">' + (r.duration ? '~' + r.duration + ' min' : '') + ' - Tap to view</div></div>';
-  }
-  if (hyroxProfile && hyroxPlan.length) {
-    return '<div class="hyrox-home-card" onclick="showScreen(\'hyrox-week\')" style="border-color:var(--text-muted);">' +
-      '<div class="session-type" style="color:var(--text-dim)">HYROX Program</div>' +
-      '<div class="session-name" style="font-size:14px;color:var(--text-dim);">Rest day - View week</div></div>';
-  }
-  if (!hyroxProfile) {
-    return '<div style="text-align:center;margin-bottom:12px;"><div style="font-size:12px;color:var(--text-muted);cursor:pointer;text-decoration:underline;" onclick="showScreen(\'hyrox-setup\')">Set up HYROX program</div></div>';
-  }
-  return '';
+  var race = new Date(2027, 1, 19);
+  var now = new Date(); now.setHours(0,0,0,0);
+  var daysToRace = Math.ceil((race - now) / 86400000);
+  var doublesStart = new Date(2026, 11, 21);
+  var twelveWeekStart = new Date(2026, 10, 23);
+  var activeProgram = now >= doublesStart ? 'doubles' : (now >= twelveWeekStart ? '12week' : 'running');
+  var programs = {
+    running: { label: 'Running for HYROX 2.0', href: 'running-hyrox.html' },
+    '12week': { label: 'HYROX 12-Week Race Prep', href: 'hyrox-12week.html' },
+    doubles: { label: 'HYROX Doubles 8-Week', href: 'hyrox-doubles.html' }
+  };
+  var active = programs[activeProgram];
+  var links = Object.keys(programs).filter(function(k){return k!==activeProgram;}).map(function(k){
+    return '<a href="' + programs[k].href + '" style="font-size:12px;color:var(--text-muted);">' + programs[k].label + '</a>';
+  }).join(' · ');
+  return '<div class="hyrox-home-card" style="cursor:pointer;" onclick="window.location.href=\'' + active.href + '\'">' +
+    '<div class="session-type" style="color:#e2541b;">HYROX' + (daysToRace > 0 ? ' — ' + daysToRace + ' days to race' : '') + '</div>' +
+    '<div class="session-name">' + active.label + '</div>' +
+    '<div class="session-meta">Tap to open program</div></div>' +
+    '<div style="text-align:center;margin-bottom:8px;">' + links + '</div>';
 }
 
 function hyroxInit() {
-  hyroxLoadLocal();
-  hyroxFetchProfile().then(function() {
-    if (hyroxProfile) {
-      hyroxFetchPlan();
-      hyroxFetchBenchmarks();
-    }
-  });
+  // No-op: HYROX programs are now standalone pages
 }
 
 // ============================================================
