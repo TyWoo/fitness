@@ -838,46 +838,41 @@
 
     async function polarFetch(token) {
       const headers = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
-      const base = 'https://www.polaraccesslink.com/v3';
 
       // Proxy through our serverless function to avoid CORS
       const exRes = await fetch('/api/polar-exercises', { headers });
       if (!exRes.ok) {
-        console.error('Polar exercises failed:', exRes.status, await exRes.text());
+        const errText = await exRes.text();
+        console.error('Polar exercises failed:', exRes.status, errText);
+        alert('Polar sync failed (HTTP ' + exRes.status + '). You may need to reconnect.');
         return { sessions: [] };
       }
       const exercises = await exRes.json();
-      if (!Array.isArray(exercises)) return { sessions: [] };
+      if (!Array.isArray(exercises)) { console.error('Polar: unexpected response', exercises); return { sessions: [] }; }
       console.log('Polar exercises fetched:', exercises.length);
+      // Log first exercise to debug field names
+      if (exercises.length) console.log('Polar sample exercise:', JSON.stringify(exercises[0], null, 2));
 
+      // Build sessions from exercise list first, then enrich with individual detail
       const sessions = [];
       for (const ex of exercises) {
         const dateLocal = (ex.start_time || '').slice(0, 10);
         const startedAt = ex.start_time || null;
-        const durMatch = (ex.duration || '').match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:([\d.]+)S)?/);
-        const durSec = durMatch
+        // Duration: try 'duration' field (ISO 8601), fallback to other field names
+        const durStr = ex.duration || '';
+        const durMatch = durStr.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:([\d.]+)S)?/);
+        let durSec = durMatch
           ? Math.round(parseInt(durMatch[1]||0)*3600 + parseInt(durMatch[2]||0)*60 + parseFloat(durMatch[3]||0))
           : null;
+        if (!durSec && durStr) console.warn('Polar: could not parse duration:', durStr, 'for exercise', ex.id);
         const distM = ex.distance != null ? Math.round(ex.distance) : null;
         const distKm = distM != null ? Math.round(distM / 10) / 100 : null;
         const paceKm = (durSec && distKm) ? Math.round(durSec / 60 / distKm * 100) / 100 : null;
         const sport = ex.detailed_sport_info || ex.sport || 'Workout';
         const hr = ex.heart_rate || {};
 
-        // Parse HR zones from exercise list (array of {index, lower_limit, upper_limit, in_zone})
-        let hrZoneSec = null;
-        if (ex.heart_rate_zones && Array.isArray(ex.heart_rate_zones)) {
-          hrZoneSec = {};
-          for (const z of ex.heart_rate_zones) {
-            const durZ = (z.in_zone || '').match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:([\d.]+)S)?/);
-            const sec = durZ ? Math.round(parseInt(durZ[1]||0)*3600 + parseInt(durZ[2]||0)*60 + parseFloat(durZ[3]||0)) : 0;
-            hrZoneSec['z' + z.index] = sec;
-          }
-        }
-
         sessions.push({
           external_id:      'polar-' + ex.id,
-          polar_exercise_id: String(ex.id),
           date_local:       dateLocal,
           started_at:       startedAt,
           source:           'polar',
@@ -891,53 +886,101 @@
           avg_pace_km:      paceKm,
           avg_hr:           hr.average || null,
           max_hr:           hr.maximum || null,
-          hr_zone_seconds:  hrZoneSec,
+          hr_zone_seconds:  null, // will be filled from exercise detail
+          _exerciseId:      ex.id,
         });
       }
 
+      // Fetch individual exercise details for HR zones + accurate duration
+      const twoWeeksAgo = new Date(Date.now() - 14*24*60*60*1000).toISOString().slice(0,10);
+      const recentSessions = sessions.filter(s => s.date_local >= twoWeeksAgo);
+      console.log(`Fetching detail for ${recentSessions.length} recent exercises...`);
+      for (const s of recentSessions) {
+        try {
+          const detRes = await fetch('/api/polar-exercise-detail?id=' + encodeURIComponent(s._exerciseId), { headers });
+          if (!detRes.ok) { console.warn('Detail fetch failed for', s._exerciseId, detRes.status); continue; }
+          const det = await detRes.json();
+          if (det) {
+            console.log('Polar detail for', s._exerciseId, ':', JSON.stringify({duration:det.duration,heart_rate:det.heart_rate,heart_rate_zones:det.heart_rate_zones?.length,distance:det.distance}));
+            // Duration from detail (more reliable)
+            const detDurStr = det.duration || '';
+            const detDurMatch = detDurStr.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:([\d.]+)S)?/);
+            const detDurSec = detDurMatch ? Math.round(parseInt(detDurMatch[1]||0)*3600 + parseInt(detDurMatch[2]||0)*60 + parseFloat(detDurMatch[3]||0)) : null;
+            if (detDurSec && detDurSec > 0) s.duration_seconds = detDurSec;
+
+            // HR zones from detail
+            if (det.heart_rate_zones && Array.isArray(det.heart_rate_zones)) {
+              const hrZoneSec = {};
+              for (const z of det.heart_rate_zones) {
+                const zDurStr = z.in_zone || '';
+                const zMatch = zDurStr.match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:([\d.]+)S)?/);
+                const zSec = zMatch ? Math.round(parseInt(zMatch[1]||0)*3600 + parseInt(zMatch[2]||0)*60 + parseFloat(zMatch[3]||0)) : 0;
+                hrZoneSec['z' + z.index] = zSec;
+              }
+              s.hr_zone_seconds = hrZoneSec;
+            }
+
+            // Update HR from detail if better
+            if (det.heart_rate) {
+              if (det.heart_rate.average) s.avg_hr = det.heart_rate.average;
+              if (det.heart_rate.maximum) s.max_hr = det.heart_rate.maximum;
+            }
+
+            // Recalculate pace with correct duration
+            if (s.duration_seconds && s.distance_km) {
+              s.avg_pace_km = Math.round(s.duration_seconds / 60 / s.distance_km * 100) / 100;
+            }
+          }
+        } catch (e) { console.warn('Detail error for', s._exerciseId, e); }
+      }
+
+      // Clean up internal field before Supabase insert
+      const cleanSessions = sessions.map(({_exerciseId, ...rest}) => rest);
+
       // Insert new sessions, update existing ones (no unique constraint on external_id)
-      if (sessions.length > 0) {
+      if (cleanSessions.length > 0) {
         const { data: existing } = await sb.from('cardio_sessions')
           .select('external_id, id')
           .eq('source', 'polar')
-          .in('external_id', sessions.map(s => s.external_id));
+          .in('external_id', cleanSessions.map(s => s.external_id));
         const existingMap = new Map((existing || []).map(r => [r.external_id, r.id]));
-        const newSessions = sessions.filter(s => !existingMap.has(s.external_id));
-        const updateSessions = sessions.filter(s => existingMap.has(s.external_id));
+        const newSessions = cleanSessions.filter(s => !existingMap.has(s.external_id));
+        const updateSessions = cleanSessions.filter(s => existingMap.has(s.external_id));
         if (newSessions.length > 0) {
           const { error } = await sb.from('cardio_sessions').insert(newSessions);
           if (error) console.error('Supabase insert error:', error);
+          else console.log('Inserted', newSessions.length, 'new sessions');
         }
         // Update existing rows (fixes duration, distance, HR zones, etc.)
         for (const s of updateSessions) {
           const rowId = existingMap.get(s.external_id);
-          const { external_id, polar_exercise_id, ...updates } = s;
-          await sb.from('cardio_sessions').update(updates).eq('id', rowId);
+          const { external_id, ...updates } = s;
+          const { error } = await sb.from('cardio_sessions').update(updates).eq('id', rowId);
+          if (error) console.error('Supabase update error for', s.external_id, error);
         }
         console.log(`Polar sync: ${newSessions.length} new, ${updateSessions.length} updated`);
       }
 
-      // Fetch TCX detail for recent sessions (last 14 days) to get HR samples + per-km splits
-      const twoWeeksAgo = new Date(Date.now() - 14*24*60*60*1000).toISOString().slice(0,10);
-      const recentExercises = exercises.filter(ex => (ex.start_time || '').slice(0,10) >= twoWeeksAgo);
-      console.log(`Fetching TCX for ${recentExercises.length} recent exercises...`);
-      for (const ex of recentExercises) {
+      // Fetch TCX for recent sessions to get HR samples + per-km splits
+      for (const s of recentSessions) {
         try {
-          const tcxRes = await fetch('/api/polar-exercise-tcx?id=' + encodeURIComponent(ex.id), { headers });
-          if (!tcxRes.ok) { console.warn('TCX fetch failed for', ex.id, tcxRes.status); continue; }
+          const tcxRes = await fetch('/api/polar-exercise-tcx?id=' + encodeURIComponent(s._exerciseId), { headers });
+          if (!tcxRes.ok) { console.warn('TCX fetch failed for', s._exerciseId, tcxRes.status); continue; }
           const tcxXml = await tcxRes.text();
           const parsed = parseTCXDetail(tcxXml);
           if (parsed) {
-            const extId = 'polar-' + ex.id;
-            await sb.from('cardio_sessions').update({
+            const extId = 'polar-' + s._exerciseId;
+            const { error } = await sb.from('cardio_sessions').update({
               hr_samples: parsed.hrSamples.length ? JSON.stringify(parsed.hrSamples) : null,
               details: parsed.details ? JSON.stringify(parsed.details) : null,
             }).eq('external_id', extId);
+            if (error) console.warn('TCX update error for', extId, error);
+            else console.log('TCX data saved for', extId);
           }
-        } catch (e) { console.warn('TCX parse error for', ex.id, e); }
+        } catch (e) { console.warn('TCX error for', s._exerciseId, e); }
       }
 
-      return { sessions };
+      return { sessions: cleanSessions };
     }
 
     // Parse TCX XML to extract HR samples and per-km split data
