@@ -321,15 +321,140 @@ async function showPolarPicker(sessionId){
   };
 }
 
+const POLAR_AUTH_URL='https://flow.polar.com/oauth2/authorization';
+const POLAR_CLIENT_ID='83234730-d32a-46bf-ba3f-50e761384798';
+
+function polarGetToken(){ return sessionStorage.getItem('polar_token')||null; }
+
+function polarOAuthConnect(){
+  const redirectUri=encodeURIComponent(window.location.origin+'/api/polar-callback');
+  window.location.href=`${POLAR_AUTH_URL}?response_type=code&client_id=${POLAR_CLIENT_ID}&redirect_uri=${redirectUri}`;
+}
+
+// Check for token in URL hash on page load (returned from OAuth callback)
+(function checkPolarCallback(){
+  const h=window.location.hash;
+  if(h.includes('polar_token')){
+    const p=new URLSearchParams(h.replace('#',''));
+    const t=p.get('polar_token');
+    if(t){ sessionStorage.setItem('polar_token',t); history.replaceState(null,'',window.location.pathname+window.location.search); }
+  }
+})();
+
+function parseDurISO(s){ const m=(s||'').match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:([\d.]+)S)?/); return m?Math.round(parseInt(m[1]||0)*3600+parseInt(m[2]||0)*60+parseFloat(m[3]||0)):null; }
+
+async function polarFullSync(token){
+  const headers={Authorization:'Bearer '+token,Accept:'application/json'};
+  // 1. Fetch exercise list via proxy
+  const exRes=await fetch('/api/polar-exercises',{headers});
+  if(!exRes.ok){ const t=await exRes.text(); console.error('Polar list failed:',exRes.status,t); throw new Error('Polar API error '+exRes.status); }
+  const exercises=await exRes.json();
+  if(!Array.isArray(exercises)) throw new Error('Unexpected Polar response');
+
+  const sessions=[];
+  for(const ex of exercises){
+    const dateLocal=(ex.start_time||'').slice(0,10);
+    const durSec=parseDurISO(ex.duration);
+    const distM=ex.distance!=null?Math.round(ex.distance):null;
+    const distKm=distM!=null?Math.round(distM/10)/100:null;
+    const sport=ex.detailed_sport_info||ex.sport||'Workout';
+    const hr=ex.heart_rate||{};
+    sessions.push({
+      external_id:'polar-'+ex.id, _exId:ex.id, date_local:dateLocal, started_at:ex.start_time||null,
+      source:'polar', sport_type:sport,
+      activity_type:sport.toLowerCase().includes('run')?'running':sport.toLowerCase().includes('walk')?'walking':sport.toLowerCase().includes('bik')?'cycling':'other',
+      duration_seconds:durSec, distance_meters:distM, distance_km:distKm,
+      avg_pace_km:(durSec&&distKm)?Math.round(durSec/60/distKm*100)/100:null,
+      avg_hr:hr.average||null, max_hr:hr.maximum||null, hr_zone_seconds:null,
+    });
+  }
+
+  // 2. Fetch detail + TCX for recent sessions (last 14 days)
+  const cutoff=new Date(Date.now()-14*24*60*60*1000).toISOString().slice(0,10);
+  const recent=sessions.filter(s=>s.date_local>=cutoff);
+  for(const s of recent){
+    // Detail (duration, HR zones)
+    try{
+      const dRes=await fetch('/api/polar-exercise-detail?id='+encodeURIComponent(s._exId),{headers});
+      if(dRes.ok){
+        const det=await dRes.json();
+        const detDur=parseDurISO(det.duration);
+        if(detDur&&detDur>0) s.duration_seconds=detDur;
+        if(det.heart_rate){ if(det.heart_rate.average) s.avg_hr=det.heart_rate.average; if(det.heart_rate.maximum) s.max_hr=det.heart_rate.maximum; }
+        if(det.heart_rate_zones&&Array.isArray(det.heart_rate_zones)){
+          const zs={}; det.heart_rate_zones.forEach(z=>{ zs['z'+z.index]=parseDurISO(z.in_zone)||0; }); s.hr_zone_seconds=zs;
+        }
+        if(s.duration_seconds&&s.distance_km) s.avg_pace_km=Math.round(s.duration_seconds/60/s.distance_km*100)/100;
+      }
+    }catch(e){ console.warn('Detail error',s._exId,e); }
+    // TCX (splits + elevation + HR samples)
+    try{
+      const tRes=await fetch('/api/polar-exercise-tcx?id='+encodeURIComponent(s._exId),{headers});
+      if(tRes.ok){
+        const xml=await tRes.text();
+        const parsed=parseTCXForSplits(xml);
+        if(parsed){ s.hr_samples=parsed.hrSamples.length?JSON.stringify(parsed.hrSamples):null; s.details=parsed.details?JSON.stringify(parsed.details):null; }
+      }
+    }catch(e){ console.warn('TCX error',s._exId,e); }
+  }
+
+  // 3. Upsert to Supabase
+  const clean=sessions.map(({_exId,...rest})=>rest);
+  const {error}=await fetch(SB_URL+'/cardio_sessions',{method:'POST',headers:Object.assign({},sbH,{'Prefer':'return=minimal,resolution=merge-duplicates'}),body:JSON.stringify(clean)}).then(r=>r.ok?{}:{error:r.statusText});
+  if(error) console.error('Upsert error:',error);
+  return clean;
+}
+
+// TCX parser (matches dashboard version)
+function parseTCXForSplits(xml){
+  const doc=new DOMParser().parseFromString(xml,'text/xml');
+  const tps=doc.getElementsByTagName('Trackpoint');
+  if(!tps.length) return null;
+  const pts=[];
+  for(const tp of tps){
+    const tEl=tp.getElementsByTagName('Time')[0]; const hEl=tp.getElementsByTagName('Value')[0];
+    const dEl=tp.getElementsByTagName('DistanceMeters')[0]; const aEl=tp.getElementsByTagName('AltitudeMeters')[0];
+    pts.push({time:tEl?new Date(tEl.textContent).getTime():null, hr:hEl?parseInt(hEl.textContent)||null:null, dist:dEl?parseFloat(dEl.textContent)||0:0, alt:aEl?parseFloat(aEl.textContent):null});
+  }
+  const hrSamples=[]; let lastT=0;
+  for(const p of pts){ if(p.hr&&p.time&&p.time-lastT>=10000){ hrSamples.push(p.hr); lastT=p.time; } }
+  const kmSplits=[]; let kmT=pts[0]?.time||0,hrS=0,hrN=0,eG=0,eL=0,pA=null,sA=null,ki=1;
+  for(const p of pts){
+    if(p.hr){hrS+=p.hr;hrN++;}
+    if(p.alt!=null){ if(sA==null) sA=p.alt; if(pA!=null){const d=p.alt-pA; if(d>0) eG+=d; else eL+=Math.abs(d);} pA=p.alt; }
+    if(p.dist>=ki*1000){ const el=(p.time-kmT)/1000; kmSplits.push({km:ki,time:el,pace:el>0?el:null,hr:hrN?Math.round(hrS/hrN):null,ele_gain:Math.round(eG),ele_loss:Math.round(eL)}); kmT=p.time;hrS=0;hrN=0;eG=0;eL=0;sA=p.alt;ki++; }
+  }
+  const lp=pts[pts.length-1];
+  if(lp&&lp.dist>(ki-1)*1000){ const pd=lp.dist-(ki-1)*1000; const el=(lp.time-kmT)/1000; kmSplits.push({km:ki,partial:Math.round(pd),time:el,pace:pd>100?Math.round(el/(pd/1000)):null,hr:hrN?Math.round(hrS/hrN):null,ele_gain:Math.round(eG),ele_loss:Math.round(eL)}); }
+  const tG=kmSplits.reduce((a,s)=>a+(s.ele_gain||0),0), tL=kmSplits.reduce((a,s)=>a+(s.ele_loss||0),0);
+  return {hrSamples, details:kmSplits.length?{km_splits:kmSplits,ele_gain:tG,ele_loss:tL}:null};
+}
+
 async function polarSync(){
   const btn=document.getElementById('polarSyncBtn');
-  if(btn){ btn.disabled=true; btn.textContent='Syncing…'; }
+  const token=polarGetToken();
+  if(!token){
+    // No token — start OAuth flow
+    if(btn) btn.textContent='Connecting…';
+    polarOAuthConnect();
+    return;
+  }
+  if(btn){ btn.disabled=true; btn.textContent='Syncing Polar API…'; }
   try{
+    // Full sync: API → Supabase → link to plan
+    const synced=await polarFullSync(token);
+    if(btn) btn.textContent=synced.length+' sessions synced';
+    // Now read from Supabase and auto-link
     const rows=await polarFetchSessions();
     const n=polarLinkSessions(rows);
-    if(btn){ btn.textContent=n?n+' session'+(n>1?'s':'')+' linked':'No new matches'; btn.disabled=false; setTimeout(()=>{btn.textContent='Sync Polar';},3000); }
+    _polarCache=null; _polarCacheTs=0; // bust dropdown cache
+    if(btn){ btn.textContent=n?n+' linked · '+synced.length+' synced':'Synced '+synced.length+' sessions'; btn.disabled=false; setTimeout(()=>{btn.textContent='Sync Polar';},4000); }
     if(n) renderPlan();
-  }catch(e){ if(btn){btn.textContent='Error';btn.disabled=false;} }
+  }catch(e){
+    console.error('Polar sync error:',e);
+    if(e.message&&e.message.includes('401')){ sessionStorage.removeItem('polar_token'); if(btn){btn.textContent='Reconnect Polar';btn.disabled=false;btn.onclick=()=>{polarOAuthConnect();};} }
+    else if(btn){btn.textContent='Error: '+e.message;btn.disabled=false;setTimeout(()=>{btn.textContent='Sync Polar';},4000);}
+  }
 }
 
 /* ---------- TCX upload ---------- */
