@@ -882,19 +882,26 @@
         });
       }
 
-      // Insert only new sessions (no unique constraint on external_id)
+      // Insert new sessions, update existing ones (no unique constraint on external_id)
       if (sessions.length > 0) {
         const { data: existing } = await sb.from('cardio_sessions')
-          .select('external_id')
+          .select('external_id, id')
           .eq('source', 'polar')
           .in('external_id', sessions.map(s => s.external_id));
-        const existingIds = new Set((existing || []).map(r => r.external_id));
-        const newSessions = sessions.filter(s => !existingIds.has(s.external_id));
+        const existingMap = new Map((existing || []).map(r => [r.external_id, r.id]));
+        const newSessions = sessions.filter(s => !existingMap.has(s.external_id));
+        const updateSessions = sessions.filter(s => existingMap.has(s.external_id));
         if (newSessions.length > 0) {
           const { error } = await sb.from('cardio_sessions').insert(newSessions);
           if (error) console.error('Supabase insert error:', error);
         }
-        console.log(`Polar sync: ${newSessions.length} new, ${sessions.length - newSessions.length} existing`);
+        // Update existing rows (fixes duration, distance, etc.)
+        for (const s of updateSessions) {
+          const rowId = existingMap.get(s.external_id);
+          const { external_id, ...updates } = s;
+          await sb.from('cardio_sessions').update(updates).eq('id', rowId);
+        }
+        console.log(`Polar sync: ${newSessions.length} new, ${updateSessions.length} updated`);
       }
 
       return { sessions };
