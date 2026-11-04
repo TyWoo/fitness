@@ -148,6 +148,9 @@ th{font-size:12px;color:var(--muted);text-transform:uppercase;letter-spacing:.04
 .metric .v{font-size:18px;font-weight:800;color:var(--ink)} .metric .l{font-size:11px;color:var(--muted);margin-top:2px}
 .progress-row{display:flex;align-items:center;gap:6px;font-size:13px;margin:4px 0}
 .progress-row .delta{font-weight:700} .progress-row .delta.better{color:var(--good)} .progress-row .delta.worse{color:var(--bad)}
+.iv-phase{margin:10px 0 14px}
+.iv-label{font-weight:700;font-size:14px;margin-bottom:4px}
+.iv-stats{font-size:13px;color:var(--muted)}
 .verdict{margin:12px 0 6px;padding:12px 14px;border-radius:10px;font-size:14px;line-height:1.5}
 .verdict.pass{background:color-mix(in srgb,var(--good) 12%,var(--panel));border:1px solid color-mix(in srgb,var(--good) 35%,var(--line))}
 .verdict.warn{background:color-mix(in srgb,var(--warn) 12%,var(--panel));border:1px solid color-mix(in srgb,var(--warn) 35%,var(--line))}
@@ -427,7 +430,121 @@ function parseTCXForSplits(xml){
   const lp=pts[pts.length-1];
   if(lp&&lp.dist>(ki-1)*1000){ const pd=lp.dist-(ki-1)*1000; const el=(lp.time-kmT)/1000; kmSplits.push({km:ki,partial:Math.round(pd),time:el,pace:pd>100?Math.round(el/(pd/1000)):null,hr:hrN?Math.round(hrS/hrN):null,ele_gain:Math.round(eG),ele_loss:Math.round(eL)}); }
   const tG=kmSplits.reduce((a,s)=>a+(s.ele_gain||0),0), tL=kmSplits.reduce((a,s)=>a+(s.ele_loss||0),0);
-  return {hrSamples, details:kmSplits.length?{km_splits:kmSplits,ele_gain:tG,ele_loss:tL}:null};
+  // Per-100m micro splits for interval detection
+  const micro=[]; let mT2=pts[0]?.time||0,mHS=0,mHN=0,mi2=1;
+  for(const p of pts){
+    if(p.hr){mHS+=p.hr;mHN++;}
+    if(p.dist>=mi2*100){ micro.push({m:mi2,t:Math.round((p.time-mT2)/100)/10,hr:mHN?Math.round(mHS/mHN):null}); mT2=p.time;mHS=0;mHN=0;mi2++; }
+  }
+  const lp2=pts[pts.length-1];
+  if(lp2&&lp2.dist>(mi2-1)*100){ const rem=Math.round(lp2.dist-(mi2-1)*100); if(rem>30) micro.push({m:mi2,p:rem,t:Math.round((lp2.time-mT2)/100)/10,hr:mHN?Math.round(mHS/mHN):null}); }
+  return {hrSamples, details:kmSplits.length?{km_splits:kmSplits,ele_gain:tG,ele_loss:tL,micro:micro.length?micro:undefined}:null};
+}
+
+// ── Interval detection from 100m micro-splits ──
+function detectIntervals(micro){
+  if(!micro||micro.length<10) return null;
+  const segs=micro.map(s=>{const d=s.p||100; return{m:s.m,t:s.t,hr:s.hr,dist:d,pace:s.t>0?s.t*(1000/d):9999};});
+  // Get moving paces, find work/easy threshold via largest gap
+  const moving=segs.filter(s=>s.pace>60&&s.pace<720).map(s=>s.pace);
+  if(moving.length<5) return null;
+  const sorted=[...moving].sort((a,b)=>a-b);
+  let maxGap=0,gapIdx=Math.floor(sorted.length/2);
+  const lo=Math.floor(sorted.length*0.2),hi=Math.floor(sorted.length*0.8);
+  for(let i=lo;i<hi;i++){const gap=sorted[i+1]-sorted[i]; if(gap>maxGap){maxGap=gap;gapIdx=i;}}
+  const thresh=maxGap>15?(sorted[gapIdx]+sorted[gapIdx+1])/2:sorted[Math.floor(sorted.length*0.5)];
+  // If no clear gap, this is likely a steady run — skip interval detection
+  if(maxGap<15) return null;
+  // Classify each segment
+  segs.forEach(s=>{s.eff=s.pace>=720?'stand':s.pace<thresh?'work':'easy';});
+  // Group consecutive same-effort (stand→easy), merge single-segment outliers
+  const groups=[];
+  let cg={eff:segs[0].eff==='stand'?'easy':segs[0].eff,items:[segs[0]]};
+  for(let i=1;i<segs.length;i++){
+    const e=segs[i].eff==='stand'?'easy':segs[i].eff;
+    if(e===cg.eff){cg.items.push(segs[i]);continue;}
+    // Merge single-segment outliers into neighbors
+    if(i<segs.length-1){const ne=segs[i+1].eff==='stand'?'easy':segs[i+1].eff; if(ne===cg.eff){cg.items.push(segs[i]);continue;}}
+    groups.push(cg); cg={eff:e,items:[segs[i]]};
+  }
+  groups.push(cg);
+  // Compute stats per group
+  const gStats=g=>{
+    g.dist=g.items.reduce((a,s)=>a+s.dist,0);
+    g.time=Math.round(g.items.reduce((a,s)=>a+s.t,0)*10)/10;
+    g.pace=g.dist>0?g.time/(g.dist/1000):0;
+    const hrs=g.items.filter(s=>s.hr).map(s=>s.hr);
+    g.avgHr=hrs.length?Math.round(hrs.reduce((a,b)=>a+b,0)/hrs.length):null;
+    g.maxHr=hrs.length?Math.max(...hrs):null;
+  };
+  groups.forEach(gStats);
+  // Build interval list with state machine
+  const ivals=[]; let phase='warmup',rep=0;
+  const mergeI=(tgt,g)=>{tgt.dist+=g.dist;tgt.time=Math.round((tgt.time+g.time)*10)/10;tgt.pace=tgt.time/(tgt.dist/1000);if(g.avgHr&&tgt.avgHr)tgt.avgHr=Math.round((tgt.avgHr+g.avgHr)/2);else if(g.avgHr)tgt.avgHr=g.avgHr;if(g.maxHr)tgt.maxHr=Math.max(tgt.maxHr||0,g.maxHr);};
+  const mk=(type,g,r)=>({type,rep:r||undefined,dist:g.dist,time:g.time,pace:g.pace,avgHr:g.avgHr,maxHr:g.maxHr});
+  for(let i=0;i<groups.length;i++){
+    const g=groups[i];
+    const moreWork=groups.slice(i+1).filter(x=>x.eff==='work'&&x.dist>=400).length;
+    const nextWork=groups.slice(i+1).find(x=>x.eff==='work');
+    if(g.eff==='easy'){
+      if(phase==='warmup'){const last=ivals[ivals.length-1];if(last&&last.type==='warmup')mergeI(last,g);else ivals.push(mk('warmup',g));}
+      else if(phase==='strides'){if(nextWork&&nextWork.dist<=300){/* stride rest, skip */}else phase='transition';}
+      else if(phase==='transition'){/* gap between strides and work, skip */}
+      else if(phase==='work'){if(moreWork>0)ivals.push(mk('recovery',g));else{phase='cooldown';ivals.push(mk('cooldown',g));}}
+      else if(phase==='cooldown'){const last=ivals[ivals.length-1];if(last)mergeI(last,g);}
+    }else{// work
+      if(phase==='warmup'||phase==='transition'){
+        if(g.dist<=300&&(!nextWork||nextWork.dist<=300||groups.slice(i+1).filter(x=>x.eff==='work'&&x.dist<=300).length>=2)){phase='strides';rep++;ivals.push(mk('stride',g,rep));}
+        else{phase='work';rep=1;ivals.push(mk('work',g,rep));}
+      }else if(phase==='strides'){
+        if(g.dist<=300){rep++;ivals.push(mk('stride',g,rep));}
+        else{phase='work';rep=1;ivals.push(mk('work',g,rep));}
+      }else if(phase==='work'){rep++;ivals.push(mk('work',g,rep));}
+      else if(phase==='cooldown'){const last=ivals[ivals.length-1];if(last)mergeI(last,g);}
+    }
+  }
+  return ivals.length>=3?ivals:null;
+}
+
+function renderIntervalBreakdown(ivals){
+  if(!ivals||!ivals.length) return '';
+  let html='<h4>Interval Breakdown</h4>';
+  const warmup=ivals.filter(i=>i.type==='warmup');
+  const strides=ivals.filter(i=>i.type==='stride');
+  const work=ivals.filter(i=>i.type==='work');
+  const recs=ivals.filter(i=>i.type==='recovery');
+  const cooldown=ivals.filter(i=>i.type==='cooldown');
+  // Warmup
+  if(warmup.length){const w=warmup[0]; html+=`<div class="iv-phase"><div class="iv-label">Warmup</div><div class="iv-stats">${(w.dist/1000).toFixed(1)}km · ${fmtSec(w.time)} · ${fmtPace(w.pace)}/km${w.avgHr?' · '+w.avgHr+' bpm':''}</div></div>`;}
+  // Strides
+  if(strides.length){
+    const avgDist=Math.round(strides.reduce((a,s)=>a+s.dist,0)/strides.length);
+    html+=`<div class="iv-phase"><div class="iv-label">Strides (${strides.length} × ~${avgDist}m)</div>`;
+    html+=`<div class="tscroll"><table class="splits-tbl"><tr><th>#</th><th>Time</th><th>Pace</th><th>HR</th></tr>`;
+    strides.forEach(s=>{html+=`<tr><td>${s.rep}</td><td>${fmtSec(s.time)}</td><td class="pace-fast">${fmtPace(s.pace)}/km</td><td>${s.avgHr||'--'}</td></tr>`;});
+    html+=`</table></div></div>`;
+  }
+  // Work + Recovery interleaved
+  if(work.length){
+    const avgDist=Math.round(work.reduce((a,w)=>a+w.dist,0)/work.length);
+    const recDist=recs.length?Math.round(recs.reduce((a,r)=>a+r.dist,0)/recs.length):0;
+    const label=recDist?`${work.length} × ~${avgDist}m + ${recDist}m float`:`${work.length} × ~${avgDist}m`;
+    html+=`<div class="iv-phase"><div class="iv-label">Work Intervals (${label})</div>`;
+    html+=`<div class="tscroll"><table class="splits-tbl"><tr><th>#</th><th>Type</th><th>Dist</th><th>Time</th><th>Pace</th><th>HR</th><th>Max</th></tr>`;
+    let ri=0;
+    work.forEach(w=>{
+      html+=`<tr style="font-weight:600"><td>${w.rep}</td><td>Work</td><td>${Math.round(w.dist)}m</td><td>${fmtSec(w.time)}</td><td>${fmtPace(w.pace)}/km</td><td>${w.avgHr||'--'}</td><td>${w.maxHr||'--'}</td></tr>`;
+      if(ri<recs.length){const r=recs[ri++]; html+=`<tr class="muted"><td></td><td>Float</td><td>${Math.round(r.dist)}m</td><td>${fmtSec(r.time)}</td><td>${fmtPace(r.pace)}/km</td><td>${r.avgHr||'--'}</td><td></td></tr>`;}
+    });
+    // Summary row
+    const wAvgPace=work.reduce((a,w)=>a+w.time,0)/(work.reduce((a,w)=>a+w.dist,0)/1000);
+    const wAvgHr=work.filter(w=>w.avgHr).length?Math.round(work.filter(w=>w.avgHr).reduce((a,w)=>a+w.avgHr,0)/work.filter(w=>w.avgHr).length):null;
+    html+=`<tr style="border-top:2px solid var(--line);font-weight:700"><td></td><td>Avg</td><td>${avgDist}m</td><td>${fmtSec(work.reduce((a,w)=>a+w.time,0)/work.length)}</td><td>${fmtPace(wAvgPace)}/km</td><td>${wAvgHr||'--'}</td><td></td></tr>`;
+    html+=`</table></div></div>`;
+  }
+  // Cooldown
+  if(cooldown.length){const c=cooldown[0]; html+=`<div class="iv-phase"><div class="iv-label">Cooldown</div><div class="iv-stats">${(c.dist/1000).toFixed(1)}km · ${fmtSec(c.time)} · ${fmtPace(c.pace)}/km${c.avgHr?' · '+c.avgHr+' bpm':''}</div></div>`;}
+  return html;
 }
 
 async function polarSync(){
@@ -1016,6 +1133,10 @@ function renderAnalysis(sessionId){
     const totalEleLoss=details?.ele_loss||0;
     if(totalEleGain||totalEleLoss) html+=`<div class="metric"><div class="v">+${totalEleGain}m</div><div class="l">Elevation</div></div>`;
     html+='</div>';
+
+    // ── INTERVAL BREAKDOWN ──────────────────────────────────
+    const ivals=detectIntervals(details?.micro);
+    if(ivals) html+=renderIntervalBreakdown(ivals);
 
     // ── COACHING VERDICT ──────────────────────────────────────
     // Build signals to generate a coaching summary at the end
