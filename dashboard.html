@@ -848,15 +848,15 @@
       }
       const exercises = await exRes.json();
       if (!Array.isArray(exercises)) return { sessions: [] };
-      if (exercises[0]) alert('First exercise: ' + JSON.stringify(exercises[0]).substring(0, 500));
+      console.log('Polar exercises fetched:', exercises.length);
 
       const sessions = [];
       for (const ex of exercises) {
         const dateLocal = (ex.start_time || '').slice(0, 10);
         const startedAt = ex.start_time || null;
-        const durMatch = (ex.duration || '').match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+        const durMatch = (ex.duration || '').match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:([\d.]+)S)?/);
         const durSec = durMatch
-          ? (parseInt(durMatch[1]||0)*3600 + parseInt(durMatch[2]||0)*60 + parseInt(durMatch[3]||0))
+          ? Math.round(parseInt(durMatch[1]||0)*3600 + parseInt(durMatch[2]||0)*60 + parseFloat(durMatch[3]||0))
           : null;
         const distM = ex.distance != null ? Math.round(ex.distance) : null;
         const distKm = distM != null ? Math.round(distM / 10) / 100 : null;
