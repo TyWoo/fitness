@@ -55,7 +55,7 @@
     .badge { font-size: 10px; font-family: 'IBM Plex Mono', monospace; padding: 2px 8px; border-radius: 3px; flex-shrink: 0; }
 
     /* Bottom nav */
-    .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; background: #141414; border-top: 1px solid #222; z-index: 50; padding-bottom: env(safe-area-inset-bottom, 0px); display: grid; grid-template-columns: repeat(5, 1fr); }
+    .bottom-nav { position: fixed; bottom: 0; left: 0; right: 0; background: #141414; border-top: 1px solid #222; z-index: 50; padding-bottom: env(safe-area-inset-bottom, 0px); display: grid; grid-template-columns: repeat(6, 1fr); }
     .nav-btn { padding: 12px 0; display: flex; flex-direction: column; align-items: center; gap: 2px; background: none; border: none; cursor: pointer; color: #444; transition: color 0.15s; }
     .nav-btn.active { color: #e8501a; }
     .nav-icon { font-size: 16px; line-height: 1; }
@@ -227,6 +227,7 @@
       { id:'strength',  label:'STRENGTH',  icon:'↑' },
       { id:'progress',  label:'PROGRESS',  icon:'◈' },
       { id:'body',      label:'BODY',      icon:'◎' },
+      { id:'cardio',    label:'CARDIO',    icon:'♥' },
       { id:'history',   label:'HISTORY',   icon:'◷' },
     ];
 
@@ -822,6 +823,44 @@
               </div>
             <//>`}
 
+          ${(() => {
+            const TREND_COLORS = { chest:'#3b82f6', waist:'#f59e0b', left_arm:'#10b981', left_thigh:'#a78bfa', neck:'#ec4899' };
+            const trendMeasurements = KEY_M.filter(m => m.key !== 'weight');
+            const trendsWithData = trendMeasurements.filter(m =>
+              sorted.filter(s => s.measurements && s.measurements[m.key] != null).length >= 2
+            );
+            if (!trendsWithData.length) return null;
+            return html`
+              <${Section} label="MEASUREMENT TRENDS">
+                ${trendsWithData.map(m => {
+                  const hist = sorted.filter(s => s.measurements && s.measurements[m.key] != null);
+                  const color = TREND_COLORS[m.key] || '#e8501a';
+                  const vals = hist.map(s => s.measurements[m.key]);
+                  const first = vals[0], last = vals[vals.length - 1];
+                  const delta = last - first;
+                  const tData = {
+                    labels: hist.map(s => fmtDate(s.date)),
+                    datasets: [
+                      { label: m.label, data: vals, borderColor: color, backgroundColor: color + '12',
+                        borderWidth: 2, tension: 0.3, fill: true, pointRadius: 4, pointBackgroundColor: color },
+                      ...(m.target ? [{ label: 'Target', data: hist.map(() => m.target),
+                        borderColor: '#22c55e', borderDash: [5,4], borderWidth: 1.5, pointRadius: 0, fill: false }] : []),
+                    ],
+                  };
+                  return html`
+                    <div class="card card-p" style=${{ marginBottom:'12px' }}>
+                      <div style=${{ display:'flex', justifyContent:'space-between', alignItems:'center', marginBottom:'8px' }}>
+                        <span style=${{ fontSize:'11px', color:'#888', letterSpacing:'0.08em' }}>${m.label}</span>
+                        <span style=${{ fontSize:'11px', color: delta < 0 ? '#22c55e' : delta > 0 ? '#e8501a' : '#555' }}>
+                          ${last}${m.unit} (${delta > 0 ? '+' : ''}${delta.toFixed(1)})
+                        </span>
+                      </div>
+                      <${ChartCanvas} type="line" data=${tData} height=${120} />
+                    </div>`;
+                })}
+              <//>`;
+          })()}
+
           <${Section} label="HEMSWORTH TARGET">${targetBlock}<//>
         </div>`;
     }
@@ -839,53 +878,55 @@
       const headers = { Authorization: `Bearer ${token}`, Accept: 'application/json' };
       const base = 'https://www.polaraccesslink.com/v3';
 
-      // Create an exercise transaction to pull new exercises
-      const txRes = await fetch(`${base}/users/${userId}/exercise-transactions`, {
-        method: 'POST', headers,
-      });
-      if (txRes.status === 204) return { sessions: [] }; // no new data
-
-      const tx = await txRes.json();
-      const txId = tx['transaction-id'];
-
-      // List exercises in this transaction
-      const exRes = await fetch(`${base}/users/${userId}/exercise-transactions/${txId}`, { headers });
-      const exData = await exRes.json();
-      const exerciseUrls = (exData.exercises || []);
+      // List exercises from the last 30 days (no transaction = always re-fetchable)
+      const exRes = await fetch(`${base}/exercises`, { headers });
+      if (!exRes.ok) {
+        const errText = await exRes.text();
+        console.error('Polar list exercises failed:', exRes.status, errText);
+        return { sessions: [] };
+      }
+      const exercises = await exRes.json();
+      console.log('Polar exercises fetched:', exercises.length, exercises);
 
       const sessions = [];
-      for (const url of exerciseUrls) {
-        const exDetailRes = await fetch(url, { headers });
-        const ex = await exDetailRes.json();
-
-        // Get HR summary
-        const hrRes = await fetch(`${url}/heart-rate`, { headers });
-        const hrData = hrRes.ok ? await hrRes.json() : null;
-
-        const dateLocal = (ex['start-time'] || '').slice(0, 10);
-        const durMin = ex.duration
-          ? Math.round(parseInt(ex.duration.replace(/[^0-9]/g, '')) / 60)
+      for (const ex of exercises) {
+        const exId = ex.id;
+        // /v3/exercises uses snake_case fields
+        const dateLocal = (ex.start_time || '').slice(0, 10);
+        const startedAt = ex.start_time || null;
+        // Polar duration is ISO 8601 like "PT1H20M29S"
+        const durMatch = (ex.duration || '').match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?/);
+        const durSec = durMatch
+          ? (parseInt(durMatch[1]||0)*3600 + parseInt(durMatch[2]||0)*60 + parseInt(durMatch[3]||0))
           : null;
+        const distM = ex.distance != null ? Math.round(ex.distance) : null;
+        const distKm = distM != null ? Math.round(distM / 10) / 100 : null;
+        const paceKm = (durSec && distKm) ? Math.round(durSec / 60 / distKm * 100) / 100 : null;
+        const sport = ex.detailed_sport_info || ex.sport || 'Workout';
+        const hr = ex.heart_rate || {};
 
         sessions.push({
-          date_local:   dateLocal,
-          source:       'polar',
-          session_name: ex['detailed-sport-info'] || ex['sport-info'] || 'Workout',
-          duration_min: durMin,
-          avg_hr:       hrData?.average || null,
-          max_hr:       hrData?.maximum || null,
-          hrv_rmssd:    null, // calculated via Web Bluetooth during workout
+          external_id:      'polar-' + (exId || dateLocal + '-' + sport),
+          date_local:       dateLocal,
+          started_at:       startedAt,
+          source:           'polar',
+          sport_type:       sport,
+          activity_type:    sport.toLowerCase().includes('run') ? 'running'
+                          : sport.toLowerCase().includes('walk') ? 'walking'
+                          : sport.toLowerCase().includes('bik') ? 'cycling' : 'other',
+          duration_seconds: durSec,
+          distance_meters:  distM,
+          distance_km:      distKm,
+          avg_pace_km:      paceKm,
+          avg_hr:           hr.average || null,
+          max_hr:           hr.maximum || null,
+          hrv_rmssd:        null,
         });
       }
 
-      // Commit transaction
-      await fetch(`${base}/users/${userId}/exercise-transactions/${txId}`, {
-        method: 'DELETE', headers,
-      });
-
-      // Upsert to Supabase
+      // Upsert to Supabase (idempotent via external_id)
       if (sessions.length > 0) {
-        await sb.from('cardio_sessions').upsert(sessions, { onConflict: 'date_local,source' });
+        await sb.from('cardio_sessions').upsert(sessions, { onConflict: 'external_id' });
       }
 
       return { sessions };
@@ -1009,10 +1050,211 @@
       return `${Math.floor(sec / 60)}:${String(sec % 60).padStart(2,'0')} /500m`;
     }
 
+    // ── ACTIVITY DETAIL VIEWS ────────────────────────────────────
+    function NorwegianDetail({ session, onBack }) {
+      const phases = useMemo(() => {
+        const raw = typeof session.exercises === 'string' ? JSON.parse(session.exercises) : session.exercises;
+        return (Array.isArray(raw) ? raw : []).filter(p => p.phase);
+      }, [session]);
+      const allHr = useMemo(() => phases.flatMap(p => (p.hr?.samples || []).filter(v => v > 0)), [phases]);
+      const totalDist = phases.reduce((s, p) => s + (p.distance_km || 0), 0);
+      const durSec = session.duration_seconds || 0;
+      const avgHr = allHr.length ? Math.round(allHr.reduce((s, v) => s + v, 0) / allHr.length) : null;
+      const maxHrVal = allHr.length ? Math.max(...allHr) : null;
+      const durH = Math.floor(durSec / 3600), durM = Math.floor((durSec % 3600) / 60), durS = durSec % 60;
+      const durStr = `${durH > 0 ? String(durH).padStart(2, '0') + ':' : ''}${String(durM).padStart(2, '0')}:${String(durS).padStart(2, '0')}`;
+      const avgPace = totalDist > 0 ? (durSec / 60) / totalDist : 0;
+      const paceStr = avgPace > 0 ? `${Math.floor(avgPace)}:${String(Math.round((avgPace % 1) * 60)).padStart(2, '0')}` : '—';
+      const elGain = phases.reduce((s, p) => s + (p.elevation?.gain_m || 0), 0);
+      const elLoss = phases.reduce((s, p) => s + (p.elevation?.loss_m || 0), 0);
+      const workPhases = phases.filter(p => p.phase === 'work');
+
+      // HR Zones
+      const zm = maxHrVal || 185;
+      const ZONES = [
+        { l: '1', lo: 0, hi: zm * 0.6, c: '#9ca3af' }, { l: '2', lo: zm * 0.6, hi: zm * 0.7, c: '#3b82f6' },
+        { l: '3', lo: zm * 0.7, hi: zm * 0.8, c: '#22c55e' }, { l: '4', lo: zm * 0.8, hi: zm * 0.9, c: '#f59e0b' },
+        { l: '5', lo: zm * 0.9, hi: 999, c: '#ef4444' },
+      ];
+      const zCounts = ZONES.map(z => allHr.filter(v => v >= z.lo && v < z.hi).length);
+      const zTotal = zCounts.reduce((s, c) => s + c, 0) || 1;
+      const zPcts = zCounts.map(c => Math.round((c / zTotal) * 100));
+      const zTimes = zCounts.map(c => { const m = Math.floor(c / 60), s = c % 60; return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`; });
+
+      // HR chart (downsampled)
+      const hrChart = useMemo(() => {
+        if (!allHr.length) return null;
+        const step = Math.max(1, Math.floor(allHr.length / 300));
+        const d = allHr.filter((_, i) => i % step === 0);
+        return {
+          labels: d.map((_, i) => { const s = i * step, m = Math.floor(s / 60); return `${m}:${String(s % 60).padStart(2, '0')}`; }),
+          datasets: [{ label: 'HR', data: d, borderColor: '#e8501a', backgroundColor: 'rgba(232,80,26,0.12)', borderWidth: 1.5, tension: 0.2, fill: true, pointRadius: 0 }],
+        };
+      }, [allHr]);
+
+      // Interval avg HR chart
+      const intChart = useMemo(() => {
+        const valid = phases.filter(p => p.hr?.avg > 1);
+        if (!valid.length) return null;
+        return {
+          labels: valid.map(p => `${p.phase === 'work' ? 'W' : 'R'}${p.cycle}`),
+          datasets: [{ label: 'Avg HR', data: valid.map(p => p.hr.avg),
+            backgroundColor: valid.map(p => p.phase === 'work' ? 'rgba(232,80,26,0.7)' : 'rgba(39,174,96,0.5)'), borderRadius: 3 }],
+        };
+      }, [phases]);
+
+      // Pace per interval chart
+      const paceChart = useMemo(() => {
+        const valid = phases.filter(p => p.pace_avg && p.pace_avg !== '--:--');
+        if (!valid.length) return null;
+        return {
+          labels: valid.map(p => `${p.phase === 'work' ? 'W' : 'R'}${p.cycle}`),
+          datasets: [{ label: 'Pace (min/km)', data: valid.map(p => { const [m, s] = p.pace_avg.split(':').map(Number); return m + s / 60; }),
+            backgroundColor: valid.map(p => p.phase === 'work' ? 'rgba(232,80,26,0.7)' : 'rgba(39,174,96,0.5)'), borderRadius: 3 }],
+        };
+      }, [phases]);
+
+      const ds = {
+        hdr: { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' },
+        back: { background: 'none', border: '1px solid #333', color: '#888', borderRadius: '3px', padding: '6px 12px', fontSize: '11px', fontFamily: "'IBM Plex Mono',monospace", cursor: 'pointer' },
+        title: { fontFamily: "'Bebas Neue',cursive", fontSize: '22px', color: '#e8501a', letterSpacing: '0.05em' },
+        date: { fontSize: '11px', color: '#555' },
+        grid: { display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '8px', marginBottom: '16px' },
+        stat: { background: '#141414', border: '1px solid #222', borderRadius: '3px', padding: '12px', textAlign: 'center' },
+        sv: { fontFamily: "'Bebas Neue',cursive", fontSize: '24px', color: '#fff' },
+        sl: { fontSize: '10px', color: '#555', marginTop: '2px', letterSpacing: '0.08em' },
+        zr: { display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '6px', fontSize: '11px' },
+        ir: { display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '8px 0', borderBottom: '1px solid #1a1a1a', fontSize: '11px' },
+      };
+
+      return html`
+        <div class="screen">
+          <div style=${ds.hdr}>
+            <button style=${ds.back} onClick=${onBack}>← BACK</button>
+            <div>
+              <div style=${ds.title}>${session.template_name || 'Norwegian 4×4'}</div>
+              <div style=${ds.date}>${fmtDate(session.date_local)} · ${session.date_iso ? new Date(session.date_iso).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) : ''}</div>
+            </div>
+          </div>
+
+          <${Section} label="TRAINING SUMMARY">
+            <div style=${ds.grid}>
+              <div style=${ds.stat}><div style=${ds.sv}>${durStr}</div><div style=${ds.sl}>DURATION</div></div>
+              <div style=${ds.stat}><div style=${ds.sv}>${totalDist.toFixed(2)}</div><div style=${ds.sl}>DISTANCE KM</div></div>
+              <div style=${ds.stat}><div style=${{ ...ds.sv, color: '#e8501a' }}>${avgHr || '—'}</div><div style=${ds.sl}>AVG HR · MAX ${maxHrVal || '—'}</div></div>
+              <div style=${ds.stat}><div style=${ds.sv}>${paceStr}</div><div style=${ds.sl}>AVG PACE /KM</div></div>
+              <div style=${ds.stat}><div style=${ds.sv}>↑${elGain}m</div><div style=${ds.sl}>ELEV · ↓${elLoss}m</div></div>
+              <div style=${ds.stat}><div style=${ds.sv}>${workPhases.length}</div><div style=${ds.sl}>WORK INTERVALS</div></div>
+            </div>
+          <//>
+
+          ${hrChart && html`
+            <${Section} label="HEART RATE (BPM)">
+              <div class="card card-p">
+                <${ChartCanvas} type="line" data=${hrChart} height=${160} />
+              </div>
+              <div class="card card-p" style=${{ marginTop: '8px' }}>
+                <div style=${{ fontSize: '10px', color: '#555', marginBottom: '10px', letterSpacing: '0.08em' }}>HR ZONES</div>
+                ${ZONES.map((z, i) => html`
+                  <div style=${ds.zr} key=${z.l}>
+                    <div style=${{ width: '14px', fontWeight: '700', textAlign: 'center', color: z.c }}>${z.l}</div>
+                    <div style=${{ flex: 1, background: '#1a1a1a', borderRadius: '2px', height: '8px', overflow: 'hidden' }}>
+                      <div style=${{ height: '100%', borderRadius: '2px', width: zPcts[i] + '%', background: z.c }}></div>
+                    </div>
+                    <div style=${{ width: '32px', textAlign: 'right', color: '#888' }}>${zPcts[i]}%</div>
+                    <div style=${{ width: '48px', textAlign: 'right', color: '#555', fontSize: '10px' }}>${zTimes[i]}</div>
+                  </div>`)}
+              </div>
+            <//>`}
+
+          ${paceChart && html`
+            <${Section} label="PACE (MIN/KM)">
+              <div class="card card-p">
+                <${ChartCanvas} type="bar" data=${paceChart} height=${120} opts=${{ plugins: { legend: { display: false } }, scales: { ...BASE_OPTS.scales, y: { ...BASE_OPTS.scales?.y, reverse: true, ticks: { ...BASE_OPTS.scales?.y?.ticks, callback: v => Math.floor(v) + ':' + String(Math.round((v % 1) * 60)).padStart(2, '0') } } } }} />
+                <div style=${{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '9px', color: '#555' }}>
+                  <span><span style=${{ color: 'rgba(232,80,26,0.7)' }}>■</span> WORK</span>
+                  <span><span style=${{ color: 'rgba(39,174,96,0.5)' }}>■</span> RECOVERY</span>
+                </div>
+              </div>
+            <//>`}
+
+          ${intChart && html`
+            <${Section} label="INTERVAL HR">
+              <div class="card card-p">
+                <${ChartCanvas} type="bar" data=${intChart} height=${120} opts=${{ plugins: { legend: { display: false } } }} />
+                <div style=${{ display: 'flex', gap: '16px', marginTop: '8px', fontSize: '9px', color: '#555' }}>
+                  <span><span style=${{ color: 'rgba(232,80,26,0.7)' }}>■</span> WORK</span>
+                  <span><span style=${{ color: 'rgba(39,174,96,0.5)' }}>■</span> RECOVERY</span>
+                </div>
+              </div>
+            <//>`}
+
+          <${Section} label="INTERVALS">
+            <div class="card card-p">
+              ${phases.filter(p => p.hr?.avg > 1).sort((a, b) => (a.cycle - b.cycle) || (a.phase === 'work' ? -1 : 1)).map((p, i) => html`
+                <div style=${ds.ir} key=${i}>
+                  <div style=${{ color: p.phase === 'work' ? '#e8501a' : '#27ae60', width: '28px', fontWeight: '700' }}>${p.phase === 'work' ? 'W' : 'R'}${p.cycle}</div>
+                  <div style=${{ color: '#888' }}>${Math.floor(p.duration / 60)}:${String(p.duration % 60).padStart(2, '0')}</div>
+                  <div style=${{ color: '#fff' }}>${p.hr?.avg || '—'} bpm</div>
+                  <div style=${{ color: '#555' }}>${p.distance_km?.toFixed(2) || '—'} km</div>
+                  <div style=${{ color: '#555' }}>${p.pace_avg || '—'}</div>
+                </div>`)}
+            </div>
+          <//>
+        </div>`;
+    }
+
+    function RunDetail({ session, onBack }) {
+      const durSec = session.duration_seconds || (session.duration_min ? session.duration_min * 60 : 0);
+      const durH = Math.floor(durSec / 3600);
+      const durM = Math.floor((durSec % 3600) / 60);
+      const durS = durSec % 60;
+      const durStr = (durH > 0 ? String(durH).padStart(2,'0') + ':' : '') + String(durM).padStart(2,'0') + ':' + String(durS).padStart(2,'0');
+
+      const ds = {
+        hdr: { display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '20px' },
+        back: { background: 'none', border: '1px solid #333', color: '#888', borderRadius: '3px', padding: '6px 12px', fontSize: '11px', fontFamily: "'IBM Plex Mono',monospace", cursor: 'pointer' },
+        title: { fontFamily: "'Bebas Neue',cursive", fontSize: '22px', color: '#4a90d9', letterSpacing: '0.05em' },
+        date: { fontSize: '11px', color: '#555' },
+        grid: { display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: '8px', marginBottom: '16px' },
+        stat: { background: '#141414', border: '1px solid #222', borderRadius: '3px', padding: '12px', textAlign: 'center' },
+        sv: { fontFamily: "'Bebas Neue',cursive", fontSize: '24px', color: '#fff' },
+        sl: { fontSize: '10px', color: '#555', marginTop: '2px', letterSpacing: '0.08em' },
+      };
+
+      return html`
+        <div class="screen">
+          <div style=${ds.hdr}>
+            <button style=${ds.back} onClick=${onBack}>← BACK</button>
+            <div>
+              <div style=${ds.title}>${session.sport_type || session.session_name || 'Run'}</div>
+              <div style=${ds.date}>${fmtDate(session.date_local)}</div>
+            </div>
+          </div>
+
+          <${Section} label="TRAINING SUMMARY">
+            <div style=${ds.grid}>
+              <div style=${ds.stat}><div style=${ds.sv}>${durStr}</div><div style=${ds.sl}>DURATION</div></div>
+              <div style=${ds.stat}><div style=${ds.sv}>${session.distance_km ? session.distance_km.toFixed(2) : '—'}</div><div style=${ds.sl}>DISTANCE KM</div></div>
+              <div style=${ds.stat}><div style=${{ ...ds.sv, color: '#e8501a' }}>${session.avg_hr || '—'}</div><div style=${ds.sl}>AVG HR${session.max_hr ? ' · MAX ' + session.max_hr : ''}</div></div>
+              <div style=${ds.stat}><div style=${ds.sv}>${session.avg_pace_km || '—'}</div><div style=${ds.sl}>AVG PACE /KM</div></div>
+              ${session.hrv_rmssd != null ? html`<div style=${ds.stat}><div style=${ds.sv}>${Math.round(session.hrv_rmssd)}</div><div style=${ds.sl}>HRV (RMSSD)</div></div>` : null}
+            </div>
+          <//>
+
+          ${session.training_benefit ? html`
+            <${Section} label="TRAINING BENEFIT">
+              <div class="card card-p" style=${{ fontSize: '12px', color: '#888' }}>${session.training_benefit}</div>
+            <//>` : null}
+        </div>`;
+    }
+
     function CardioScreen({ sessions, cardioSessions, gfitToken, gfitData, gfitLoading, onConnectGfit, onSyncGfit, polarToken, polarLoading, polarSynced, onConnectPolar, onSyncPolar }) {
+      const [detail, setDetail] = useState(null);
       const logRows   = useMemo(() => rowingSessions(sessions), [sessions]);
       const polarData = useMemo(() => (cardioSessions || []).filter(s => s.source === 'polar'),      [cardioSessions]);
-      const runData   = useMemo(() => (cardioSessions || []).filter(s => s.source === 'google_fit'), [cardioSessions]);
+      const runData   = useMemo(() => (cardioSessions || []).filter(s => s.activity_type === 'running' || s.source === 'google_fit'), [cardioSessions]);
+      const norwegianSessions = useMemo(() => sessions.filter(s => s.template_id === 'norwegian_4x4').sort((a, b) => new Date(b.date_iso) - new Date(a.date_iso)), [sessions]);
       const rowData   = useMemo(() => (cardioSessions || []).filter(s => s.source === 'concept2'),   [cardioSessions]);
 
       const stepsChartData = useMemo(() => {
@@ -1056,8 +1298,62 @@
       const avgSteps7d = gfitData?.days ? Math.round(gfitData.days.slice(-7).reduce((s,d) => s+d.steps, 0) / Math.min(gfitData.days.slice(-7).length, 7)) : null;
       const totalCal7d = gfitData?.days ? Math.round(gfitData.days.slice(-7).reduce((s,d) => s+d.calories, 0)) : null;
 
+      if (detail) {
+        return detail.type === 'norwegian'
+          ? html`<${NorwegianDetail} session=${detail.session} onBack=${() => setDetail(null)} />`
+          : html`<${RunDetail} session=${detail.session} onBack=${() => setDetail(null)} />`;
+      }
+
       return html`
         <div class="screen">
+
+          ${norwegianSessions.length > 0 && html`
+            <${Section} label="NORWEGIAN 4×4" badge=${norwegianSessions.length + ' SESSION' + (norwegianSessions.length !== 1 ? 'S' : '')}>
+              <div class="card card-p">
+                ${norwegianSessions.map((s, i) => {
+                  const ph = typeof s.exercises === 'string' ? JSON.parse(s.exercises) : s.exercises;
+                  const phases = (Array.isArray(ph) ? ph : []).filter(p => p.phase);
+                  const hrs = phases.flatMap(p => (p.hr?.samples || []).filter(v => v > 0));
+                  const dist = phases.reduce((sum, p) => sum + (p.distance_km || 0), 0);
+                  const avg = hrs.length ? Math.round(hrs.reduce((a, b) => a + b, 0) / hrs.length) : null;
+                  const dm = Math.floor(s.duration_seconds / 60);
+                  return html`
+                    <div key=${s.id} onClick=${() => setDetail({ type: 'norwegian', session: s })} style=${{
+                      display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0',
+                      borderBottom: i < norwegianSessions.length - 1 ? '1px solid #1a1a1a' : 'none', cursor: 'pointer',
+                    }}>
+                      <div>
+                        <div style=${{ fontSize: '12px', color: '#fff' }}>${fmtDate(s.date_local)}</div>
+                        <div style=${{ fontSize: '10px', color: '#555', marginTop: '2px' }}>${dm} min · ${dist.toFixed(1)} km</div>
+                      </div>
+                      <div style=${{ textAlign: 'right' }}>
+                        <div style=${{ fontSize: '12px', color: '#e8501a' }}>${avg || '—'} bpm</div>
+                        <div style=${{ fontSize: '10px', color: '#555', marginTop: '2px' }}>→</div>
+                      </div>
+                    </div>`;
+                })}
+              </div>
+            <//>`}
+
+          ${runData.length > 0 && html`
+            <${Section} label="RECENT RUNS" badge=${runData.length + ' SESSION' + (runData.length !== 1 ? 'S' : '')}>
+              <div class="card card-p">
+                ${runData.slice(0, 10).map((s, i) => html`
+                  <div key=${s.id || i} onClick=${() => setDetail({ type: 'run', session: s })} style=${{
+                    display: 'flex', justifyContent: 'space-between', alignItems: 'center', padding: '10px 0',
+                    borderBottom: i < Math.min(runData.length, 10) - 1 ? '1px solid #1a1a1a' : 'none', cursor: 'pointer',
+                  }}>
+                    <div>
+                      <div style=${{ fontSize: '12px', color: '#fff' }}>${fmtDate(s.date_local)}</div>
+                      <div style=${{ fontSize: '10px', color: '#555', marginTop: '2px' }}>${s.duration_seconds ? Math.round(s.duration_seconds / 60) : (s.duration_min || '—')} min · ${s.distance_km ? s.distance_km.toFixed(1) + ' km' : '—'}</div>
+                    </div>
+                    <div style=${{ textAlign: 'right' }}>
+                      <div style=${{ fontSize: '12px', color: '#4a90d9' }}>${s.avg_pace_km || '—'} /km</div>
+                      <div style=${{ fontSize: '10px', color: '#555', marginTop: '2px' }}>→</div>
+                    </div>
+                  </div>`)}
+              </div>
+            <//>`}
 
           <${Section} label="GOOGLE FIT" badge=${gfitToken ? (gfitLoading ? 'SYNCING…' : 'CONNECTED') : 'NOT CONNECTED'}>
             ${!gfitToken ? html`
@@ -1124,6 +1420,60 @@
                 }}>${polarLoading ? 'SYNCING…' : '↻ SYNC NOW'}</button>
               </div>
             `}
+            <div class="card card-p" style=${{ marginTop:'8px', padding:'16px' }}>
+              <div style=${{ display:'flex', justifyContent:'space-between', alignItems:'center', flexWrap:'wrap', gap:'8px' }}>
+                <div>
+                  <div style=${{ fontSize:'11px', color:'#888', marginBottom:'4px' }}>Upload TCX files exported from Polar Flow web</div>
+                  <span id="tcxDashStatus" style=${{ fontSize:'10px', color:'#1f8a4c' }}></span>
+                </div>
+                <label style=${{
+                  background:'#1a1a1a', color:'#888', border:'1px solid #222', borderRadius:'6px',
+                  padding:'8px 16px', fontFamily:"'IBM Plex Mono', monospace", fontSize:'10px',
+                  letterSpacing:'0.08em', cursor:'pointer', display:'inline-block',
+                }}>UPLOAD TCX<input type="file" accept=".tcx" multiple style=${{ display:'none' }} onChange=${async (e) => {
+                  const files = Array.from(e.target.files);
+                  if (!files.length) return;
+                  const statusEl = document.getElementById('tcxDashStatus');
+                  if (statusEl) statusEl.textContent = 'Uploading…';
+                  let total = 0;
+                  for (const file of files) {
+                    const text = await file.text();
+                    const doc = new DOMParser().parseFromString(text, 'text/xml');
+                    const acts = doc.getElementsByTagName('Activity');
+                    for (const act of acts) {
+                      const sport = act.getAttribute('Sport') || 'Other';
+                      const laps = act.getElementsByTagName('Lap');
+                      let totalSec=0, totalDist=0, hrSum=0, hrN=0, maxHr=0, startTime='';
+                      for (const lap of laps) {
+                        if (!startTime) { const st=lap.getAttribute('StartTime'); if(st) startTime=st; }
+                        const ts=lap.getElementsByTagName('TotalTimeSeconds')[0];
+                        const dm=lap.getElementsByTagName('DistanceMeters')[0];
+                        if(ts) totalSec+=parseFloat(ts.textContent)||0;
+                        if(dm) totalDist+=parseFloat(dm.textContent)||0;
+                        const tps=lap.getElementsByTagName('Trackpoint');
+                        for(const tp of tps){ const hrEl=tp.getElementsByTagName('Value')[0]; if(hrEl){ const bpm=parseInt(hrEl.textContent); if(bpm>0){hrSum+=bpm;hrN++;if(bpm>maxHr)maxHr=bpm;} } }
+                      }
+                      const dateLocal=startTime?startTime.slice(0,10):'';
+                      const distKm=Math.round(totalDist/10)/100;
+                      const row = {
+                        external_id:'tcx-'+dateLocal+'-'+sport+'-'+Math.round(totalSec),
+                        date_local:dateLocal, started_at:startTime||null,
+                        source:'polar', sport_type:sport,
+                        activity_type:sport.toLowerCase().includes('run')?'running':sport.toLowerCase().includes('bik')?'cycling':'other',
+                        duration_seconds:Math.round(totalSec), distance_meters:Math.round(totalDist),
+                        distance_km:distKm, avg_pace_km:(totalSec&&distKm)?Math.round(totalSec/60/distKm*100)/100:null,
+                        avg_hr:hrN?Math.round(hrSum/hrN):null, max_hr:maxHr||null,
+                      };
+                      await sb.from('cardio_sessions').upsert([row], { onConflict:'external_id' });
+                      total++;
+                    }
+                  }
+                  if (statusEl) statusEl.textContent = total + ' session' + (total!==1?'s':'') + ' uploaded';
+                  e.target.value = '';
+                  await reloadCardio();
+                }} /></label>
+              </div>
+            </div>
           <//>
 
           <${Section} label="WORKOUT HR · HRV" badge=${polarData.length ? 'LIVE' : 'PENDING'}>
@@ -1478,8 +1828,8 @@
       const [gfitToken,     setGfitToken]     = useState(() => sessionStorage.getItem('gfit_token') || null);
       const [gfitData,      setGfitData]      = useState(null);
       const [gfitLoading,   setGfitLoading]   = useState(false);
-      const [polarToken,    setPolarToken]    = useState(() => sessionStorage.getItem('polar_token') || null);
-      const [polarUserId,   setPolarUserId]   = useState(() => sessionStorage.getItem('polar_user') || null);
+      const [polarToken,    setPolarToken]    = useState(() => localStorage.getItem('polar_token') || null);
+      const [polarUserId,   setPolarUserId]   = useState(() => localStorage.getItem('polar_user') || null);
       const [polarLoading,  setPolarLoading]  = useState(false);
       const [polarSynced,   setPolarSynced]   = useState(false);
 
@@ -1515,16 +1865,19 @@
       // Handle Polar OAuth redirect (token in URL hash)
       useEffect(() => {
         const hash = window.location.hash.slice(1);
-        if (!hash.includes('polar_token')) return;
-        const params = Object.fromEntries(new URLSearchParams(hash));
-        if (params.polar_token) {
-          sessionStorage.setItem('polar_token', params.polar_token);
-          sessionStorage.setItem('polar_user',  params.polar_user || '');
-          setPolarToken(params.polar_token);
-          setPolarUserId(params.polar_user || '');
-          window.history.replaceState(null, '', window.location.pathname);
-          // Auto-sync on connect
-          handlePolarSync(params.polar_token, params.polar_user);
+        if (hash.includes('polar_token')) {
+          const params = Object.fromEntries(new URLSearchParams(hash));
+          if (params.polar_token) {
+            localStorage.setItem('polar_token', params.polar_token);
+            localStorage.setItem('polar_user',  params.polar_user || '');
+            setPolarToken(params.polar_token);
+            setPolarUserId(params.polar_user || '');
+            window.history.replaceState(null, '', window.location.pathname);
+            handlePolarSync(params.polar_token, params.polar_user);
+          }
+        } else if (polarToken && polarUserId) {
+          // Auto-sync on page load if token exists
+          handlePolarSync();
         }
       }, []);
 
