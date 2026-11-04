@@ -934,34 +934,7 @@
         } catch (e) { console.warn('Detail error for', s._exerciseId, e); }
       }
 
-      // Clean up internal field before Supabase insert
-      const cleanSessions = sessions.map(({_exerciseId, ...rest}) => rest);
-
-      // Insert new sessions, update existing ones (no unique constraint on external_id)
-      if (cleanSessions.length > 0) {
-        const { data: existing } = await sb.from('cardio_sessions')
-          .select('external_id, id')
-          .eq('source', 'polar')
-          .in('external_id', cleanSessions.map(s => s.external_id));
-        const existingMap = new Map((existing || []).map(r => [r.external_id, r.id]));
-        const newSessions = cleanSessions.filter(s => !existingMap.has(s.external_id));
-        const updateSessions = cleanSessions.filter(s => existingMap.has(s.external_id));
-        if (newSessions.length > 0) {
-          const { error } = await sb.from('cardio_sessions').insert(newSessions);
-          if (error) console.error('Supabase insert error:', error);
-          else console.log('Inserted', newSessions.length, 'new sessions');
-        }
-        // Update existing rows (fixes duration, distance, HR zones, etc.)
-        for (const s of updateSessions) {
-          const rowId = existingMap.get(s.external_id);
-          const { external_id, ...updates } = s;
-          const { error } = await sb.from('cardio_sessions').update(updates).eq('id', rowId);
-          if (error) console.error('Supabase update error for', s.external_id, error);
-        }
-        console.log(`Polar sync: ${newSessions.length} new, ${updateSessions.length} updated`);
-      }
-
-      // Fetch TCX for recent sessions to get HR samples + per-km splits
+      // Fetch TCX for recent sessions — merge into session objects before upsert
       for (const s of recentSessions) {
         try {
           const tcxRes = await fetch('/api/polar-exercise-tcx?id=' + encodeURIComponent(s._exerciseId), { headers });
@@ -969,15 +942,20 @@
           const tcxXml = await tcxRes.text();
           const parsed = parseTCXDetail(tcxXml);
           if (parsed) {
-            const extId = 'polar-' + s._exerciseId;
-            const { error } = await sb.from('cardio_sessions').update({
-              hr_samples: parsed.hrSamples.length ? JSON.stringify(parsed.hrSamples) : null,
-              details: parsed.details ? JSON.stringify(parsed.details) : null,
-            }).eq('external_id', extId);
-            if (error) console.warn('TCX update error for', extId, error);
-            else console.log('TCX data saved for', extId);
+            s.hr_samples = parsed.hrSamples.length ? JSON.stringify(parsed.hrSamples) : null;
+            s.details = parsed.details ? JSON.stringify(parsed.details) : null;
+            console.log('TCX parsed for', s._exerciseId);
           }
         } catch (e) { console.warn('TCX error for', s._exerciseId, e); }
+      }
+
+      // Upsert all sessions (unique constraint on external_id)
+      const cleanSessions = sessions.map(({_exerciseId, ...rest}) => rest);
+      if (cleanSessions.length > 0) {
+        const { error } = await sb.from('cardio_sessions')
+          .upsert(cleanSessions, { onConflict: 'external_id' });
+        if (error) console.error('Supabase upsert error:', error);
+        else console.log('Polar sync: upserted', cleanSessions.length, 'sessions');
       }
 
       return { sessions: cleanSessions };
