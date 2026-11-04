@@ -841,13 +841,18 @@
       const base = 'https://www.polaraccesslink.com/v3';
 
       // List exercises from the last 30 days (no transaction = always re-fetchable)
+      console.log('Calling Polar API: GET /v3/exercises');
       const exRes = await fetch(`${base}/exercises`, { headers });
+      console.log('Polar API response status:', exRes.status);
+      const exText = await exRes.text();
+      console.log('Polar API raw response:', exText.substring(0, 500));
       if (!exRes.ok) {
-        const errText = await exRes.text();
-        console.error('Polar list exercises failed:', exRes.status, errText);
+        alert('Polar API error ' + exRes.status + ': ' + exText.substring(0, 200));
         return { sessions: [] };
       }
-      const exercises = await exRes.json();
+      let exercises;
+      try { exercises = JSON.parse(exText); } catch(e) { alert('Polar JSON parse error: ' + e.message); return { sessions: [] }; }
+      alert('Polar returned ' + exercises.length + ' exercises. First: ' + JSON.stringify(exercises[0] || {}).substring(0, 200));
       console.log('Polar exercises fetched:', exercises.length, exercises);
 
       const sessions = [];
@@ -1518,14 +1523,17 @@
 
       const handlePolarSync = async (token) => {
         const t = token || polarToken;
-        if (!t) return;
+        console.log('handlePolarSync called, token exists:', !!t);
+        if (!t) { alert('No Polar token found'); return; }
         setPolarLoading(true);
         try {
-          await polarFetch(t);
+          const result = await polarFetch(t);
+          console.log('polarFetch result:', result);
           await reloadCardio();
           setPolarSynced(true);
         } catch (e) {
           console.error('Polar sync error:', e);
+          alert('Polar sync error: ' + e.message);
         } finally {
           setPolarLoading(false);
         }
