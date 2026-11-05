@@ -353,6 +353,9 @@ async function polarFullSync(token){
   if(!exRes.ok){ const t=await exRes.text(); console.error('Polar list failed:',exRes.status,t); throw new Error('Polar API error '+exRes.status); }
   const exercises=await exRes.json();
   if(!Array.isArray(exercises)) throw new Error('Unexpected Polar response');
+  console.log('Polar exercises:',exercises.length,exercises.length?'latest: '+exercises[0]?.start_time:'(empty)');
+  const dates=exercises.map(e=>(e.start_time||'').slice(0,10)).filter(Boolean).sort();
+  if(dates.length) console.log('Polar date range:',dates[0],'→',dates[dates.length-1]);
 
   const sessions=[];
   for(const ex of exercises){
@@ -560,7 +563,8 @@ async function polarSync(){
   try{
     // Full sync: API → Supabase → link to plan
     const synced=await polarFullSync(token);
-    if(btn) btn.textContent=synced.length+' sessions synced';
+    const latestDate=synced.map(s=>s.date_local).filter(Boolean).sort().pop()||'';
+    if(btn) btn.textContent=synced.length+' synced (latest: '+latestDate+')';
     // Now read from Supabase and auto-link
     const rows=await polarFetchSessions();
     const n=polarLinkSessions(rows);
