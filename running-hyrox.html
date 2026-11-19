@@ -346,8 +346,39 @@ function polarOAuthConnect(){
 
 function parseDurISO(s){ const m=(s||'').match(/PT(?:(\d+)H)?(?:(\d+)M)?(?:([\d.]+)S)?/); return m?Math.round(parseInt(m[1]||0)*3600+parseInt(m[2]||0)*60+parseFloat(m[3]||0)):null; }
 
+async function polarPullNew(headers){
+  // Pull-notification → transaction → commit flow for new exercises
+  try{
+    const nr=await fetch('/api/polar-proxy?path='+encodeURIComponent('/v3/notifications'),{headers});
+    if(!nr.ok){console.log('Polar notifications:',nr.status);return;}
+    const notifs=await nr.json();
+    const ex=(Array.isArray(notifs)?notifs:[]).find(n=>n['event-type']==='EXERCISE');
+    if(!ex||!ex.url){console.log('Polar: no new exercise notifications');return;}
+    console.log('Polar: new exercises available, pulling…');
+    const txPath=ex.url.startsWith('http')?new URL(ex.url).pathname:ex.url;
+    const tr=await fetch('/api/polar-proxy?path='+encodeURIComponent(txPath),{method:'POST',headers});
+    if(!tr.ok){console.warn('Polar tx create:',tr.status,await tr.text());return;}
+    const tx=await tr.json();
+    const listPath=tx['resource-uri']||(txPath+'/'+tx['transaction-id']);
+    const lr=await fetch('/api/polar-proxy?path='+encodeURIComponent(listPath),{headers});
+    if(!lr.ok){console.warn('Polar tx list:',lr.status);return;}
+    const list=await lr.json();
+    const urls=list['exercise-list']||[];
+    console.log('Polar: pulling',urls.length,'new exercises');
+    for(const u of urls){
+      const p=u.startsWith('http')?new URL(u).pathname:u;
+      await fetch('/api/polar-proxy?path='+encodeURIComponent(p),{headers}).catch(()=>{});
+    }
+    // Commit transaction so these exercises are now in /v3/exercises
+    await fetch('/api/polar-proxy?path='+encodeURIComponent(listPath),{method:'PUT',headers});
+    console.log('Polar: transaction committed,',urls.length,'exercises pulled');
+  }catch(e){console.warn('Polar pull-notification error:',e);}
+}
+
 async function polarFullSync(token){
   const headers={Authorization:'Bearer '+token,Accept:'application/json'};
+  // 0. Pull new exercises via notification/transaction flow
+  await polarPullNew(headers);
   // 1. Fetch exercise list via proxy
   const exRes=await fetch('/api/polar-exercises',{headers});
   if(!exRes.ok){ const t=await exRes.text(); console.error('Polar list failed:',exRes.status,t); throw new Error('Polar API error '+exRes.status); }
