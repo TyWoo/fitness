@@ -1169,7 +1169,7 @@ function buildPlanFeedback(tags,splits,c,f){
       const half=Math.floor(fullSplits.length/2);
       const firstPace=fullSplits.slice(0,half).reduce((a,s)=>a+s.pace,0)/half;
       const secondPace=fullSplits.slice(half).reduce((a,s)=>a+s.pace,0)/(fullSplits.length-half);
-      if(secondPace>firstPace*1.05) fb.push({type:'warn',text:`Second half ${Math.round(secondPace-firstPace)}s/km slower — in HYROX, the athlete who slows down least wins. Start 10s/km slower to hold pace through all 8 legs`});
+      if(secondPace>firstPace*1.05) fb.push({type:'warn',text:`Second half slower (${fmtPace(firstPace)}/km → ${fmtPace(secondPace)}/km) — in HYROX, the athlete who slows down least wins. Start conservatively to hold pace through all 8 legs`});
       else if(secondPace<firstPace*0.98) fb.push({type:'pass',text:`Negative split — closed stronger. This is how you want to race HYROX`});
     }
   }
@@ -1456,9 +1456,9 @@ function renderAnalysis(sessionId){
           const delta=avgPace-latest.pace;
           const pctDelta=Math.round(delta/latest.pace*100);
           const better=delta<0;
-          html+=`<div class="progress-row">${better?'Faster':'Slower'} than ${esc(latest.w.label)}: <span class="delta ${better?'better':'worse'}">${better?'':'+'}${Math.round(delta)}s/km (${better?'':'+'}${pctDelta}%)</span></div>`;
-          if(better) signals.push({type:'pass',text:`${Math.abs(Math.round(delta))}s/km faster than ${latest.w.label}`});
-          else if(pctDelta>3) signals.push({type:'warn',text:`${Math.round(delta)}s/km slower than ${latest.w.label} — could be fatigue or harder session`});
+          html+=`<div class="progress-row">${better?'Faster':'Slower'} than ${esc(latest.w.label)}: <span class="delta ${better?'better':'worse'}">${fmtPace(avgPace)}/km vs ${fmtPace(latest.pace)}/km (${better?'':'+'}${pctDelta}%)</span></div>`;
+          if(better) signals.push({type:'pass',text:`${fmtPace(avgPace)}/km vs ${fmtPace(latest.pace)}/km — faster than ${latest.w.label}`});
+          else if(pctDelta>3) signals.push({type:'warn',text:`${fmtPace(avgPace)}/km vs ${fmtPace(latest.pace)}/km — slower than ${latest.w.label} (could be fatigue or harder session)`});
         }
       }
     }
