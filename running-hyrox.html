@@ -327,9 +327,10 @@ async function showPolarPicker(sessionId){
 const POLAR_AUTH_URL='https://flow.polar.com/oauth2/authorization';
 const POLAR_CLIENT_ID='83234730-d32a-46bf-ba3f-50e761384798';
 
-function polarGetToken(){ return sessionStorage.getItem('polar_token')||null; }
+function polarGetToken(){ return localStorage.getItem('polar_token')||sessionStorage.getItem('polar_token')||null; }
 
 function polarOAuthConnect(){
+  localStorage.setItem('polar_return_tab',curTab||'settings');
   const redirectUri=encodeURIComponent(window.location.origin+'/api/polar-callback');
   window.location.href=`${POLAR_AUTH_URL}?response_type=code&client_id=${POLAR_CLIENT_ID}&redirect_uri=${redirectUri}`;
 }
@@ -340,7 +341,14 @@ function polarOAuthConnect(){
   if(h.includes('polar_token')){
     const p=new URLSearchParams(h.replace('#',''));
     const t=p.get('polar_token');
-    if(t){ sessionStorage.setItem('polar_token',t); history.replaceState(null,'',window.location.pathname+window.location.search); }
+    if(t){
+      localStorage.setItem('polar_token',t); sessionStorage.removeItem('polar_token');
+      history.replaceState(null,'',window.location.pathname+window.location.search);
+      // Return to the tab we were on and auto-sync
+      const retTab=localStorage.getItem('polar_return_tab')||'settings';
+      localStorage.removeItem('polar_return_tab');
+      setTimeout(()=>{ setTab(retTab); polarSync(); },300);
+    }
   }
 })();
 
@@ -605,17 +613,16 @@ async function polarSync(){
     // Full sync: API → Supabase → link to plan
     const synced=await polarFullSync(token);
     const latestDate=synced.map(s=>s.date_local).filter(Boolean).sort().pop()||'';
-    if(btn) btn.textContent=synced.length+' synced (latest: '+latestDate+')';
     // Now read from Supabase and auto-link
     const rows=await polarFetchSessions();
     const n=polarLinkSessions(rows);
     _polarCache=null; _polarCacheTs=0; // bust dropdown cache
-    if(btn){ btn.textContent=n?n+' linked · '+synced.length+' synced':'Synced '+synced.length+' sessions'; btn.disabled=false; setTimeout(()=>{btn.textContent='Sync Polar';},4000); }
+    if(btn){ btn.textContent='Synced '+synced.length+' · latest '+latestDate+(n?' · '+n+' linked':''); btn.disabled=false; }
     if(n) renderPlan();
   }catch(e){
     console.error('Polar sync error:',e);
-    if(e.message&&e.message.includes('401')){ sessionStorage.removeItem('polar_token'); if(btn){btn.textContent='Reconnect Polar';btn.disabled=false;btn.onclick=()=>{polarOAuthConnect();};} }
-    else if(btn){btn.textContent='Error: '+e.message;btn.disabled=false;setTimeout(()=>{btn.textContent='Sync Polar';},4000);}
+    if(e.message&&e.message.includes('401')){ localStorage.removeItem('polar_token');sessionStorage.removeItem('polar_token'); if(btn){btn.textContent='Reconnect Polar';btn.disabled=false;btn.onclick=()=>{polarOAuthConnect();};} }
+    else if(btn){btn.textContent='Error — check console';btn.disabled=false;}
   }
 }
 
