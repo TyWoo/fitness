@@ -249,6 +249,7 @@ function polarFetchSessions(){
     headers:{'apikey':SB_KEY,'Authorization':'Bearer '+SB_KEY}
   }).then(r=>r.ok?r.json():[]).catch(()=>[]);
 }
+function polarIds(log){ return (log._polarId||'').split(',').filter(Boolean); }
 function polarLinkSessions(cardioRows){
   const p=P(); let linked=0;
   sessionsOf(p).forEach(({w,s})=>{
@@ -257,19 +258,22 @@ function polarLinkSessions(cardioRows){
     const dStr=iso(dt);
     const L=peek(s.id);
     if(L.status==='done'&&L.avgHr&&L.dur) return; // already fully logged
-    // Find Polar sessions on same date
+    // Find ALL Polar sessions on same date
     const matches=cardioRows.filter(c=>c.date_local===dStr);
     if(!matches.length) return;
-    // Pick best match: prefer closest duration if log has dur, else first
-    const match=matches[0];
     const log=logOf(s.id);
     if(!log.date) log.date=dStr;
-    if(!log.dur&&match.duration_seconds) log.dur=Math.round(match.duration_seconds/60);
-    if(!log.dist&&match.distance_km) log.dist=match.distance_km;
-    if(!log.avgHr&&match.avg_hr) log.avgHr=match.avg_hr;
+    // Sum stats from all matches
+    const totalDur=matches.reduce((a,m)=>a+(m.duration_seconds||0),0);
+    const totalDist=matches.reduce((a,m)=>a+(m.distance_km||0),0);
+    const hrs=matches.filter(m=>m.avg_hr).map(m=>m.avg_hr);
+    const avgHr=hrs.length?Math.round(hrs.reduce((a,b)=>a+b,0)/hrs.length):null;
+    if(!log.dur&&totalDur) log.dur=Math.round(totalDur/60);
+    if(!log.dist&&totalDist) log.dist=Math.round(totalDist*100)/100;
+    if(!log.avgHr&&avgHr) log.avgHr=avgHr;
     if(!log.status) log.status='done';
-    if(!log.notes) log.notes='Auto-linked from Polar ('+match.sport_type+')';
-    log._polarId=match.external_id||match.id;
+    if(!log.notes) log.notes='Auto-linked from Polar ('+matches.map(m=>m.sport_type).join(', ')+')';
+    log._polarId=matches.map(m=>m.external_id||m.id).join(',');
     linked++;
   });
   if(linked) save();
@@ -302,26 +306,56 @@ async function showPolarPicker(sessionId){
   el.innerHTML='<div class="small muted">Loading Polar sessions…</div>';
   const rows=await polarGetAll();
   if(!rows.length){ el.innerHTML='<div class="small muted">No Polar sessions found.</div>'; return; }
-  el.innerHTML='<select id="polarSelect" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--panel);color:var(--ink);font-size:14px;margin-top:6px"><option value="">Pick a Polar session…</option>'+
-    rows.map((c,i)=>'<option value="'+i+'">'+esc(fmtPolarRow(c))+'</option>').join('')+
-    '</select><button class="btn sm pri" id="polarPickApply" style="margin-top:8px">Apply</button> <button class="btn sm" id="polarPickCancel" style="margin-top:8px">Cancel</button>';
-  document.getElementById('polarPickCancel').onclick=()=>{el.innerHTML='';};
-  document.getElementById('polarPickApply').onclick=()=>{
-    const idx=document.getElementById('polarSelect').value;
-    if(idx==='') return;
-    const c=rows[+idx];
-    const log=logOf(sessionId);
-    log.date=c.date_local||log.date;
-    if(c.duration_seconds) log.dur=Math.round(c.duration_seconds/60);
-    if(c.distance_km) log.dist=c.distance_km;
-    if(c.avg_hr) log.avgHr=c.avg_hr;
-    if(!log.status) log.status='done';
-    log._polarId=c.external_id||c.id;
-    delete _cardioCache[log._polarId]; // bust cache so analysis fetches fresh data
-    save();
-    renderPlan();
-    setTimeout(()=>renderAnalysis(sessionId),100);
-  };
+  const log=logOf(sessionId);
+  const linked=polarIds(log);
+  function render(){
+    let h='';
+    if(linked.length){
+      h+='<div style="margin:6px 0"><b class="small">Linked sessions:</b>';
+      linked.forEach((id,i)=>{
+        const r=rows.find(c=>(c.external_id||c.id)===id);
+        h+=`<div style="display:flex;align-items:center;gap:6px;margin:3px 0"><span class="small">${r?esc(fmtPolarRow(r)):id}</span><button class="btn sm" data-rm="${i}" style="padding:2px 6px;font-size:11px">✕</button></div>`;
+      });
+      h+='</div>';
+    }
+    h+='<select id="polarSelect" style="width:100%;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--panel);color:var(--ink);font-size:14px;margin-top:6px"><option value="">Add a Polar session…</option>'+
+      rows.filter(c=>!linked.includes(c.external_id||c.id)).map((c,i)=>'<option value="'+rows.indexOf(c)+'">'+esc(fmtPolarRow(c))+'</option>').join('')+
+      '</select><div style="margin-top:8px"><button class="btn sm pri" id="polarPickAdd">Add</button> <button class="btn sm" id="polarPickDone">Done</button></div>';
+    el.innerHTML=h;
+    el.querySelectorAll('[data-rm]').forEach(b=>b.onclick=()=>{
+      const idx=+b.dataset.rm;
+      const removed=linked.splice(idx,1)[0];
+      delete _cardioCache[removed];
+      applyLinked(); render();
+    });
+    document.getElementById('polarPickDone').onclick=()=>{el.innerHTML='';};
+    document.getElementById('polarPickAdd').onclick=()=>{
+      const idx=document.getElementById('polarSelect').value;
+      if(idx==='') return;
+      const c=rows[+idx];
+      const eid=c.external_id||c.id;
+      if(!linked.includes(eid)) linked.push(eid);
+      delete _cardioCache[eid];
+      applyLinked(); render();
+    };
+  }
+  function applyLinked(){
+    log._polarId=linked.join(',');
+    // Recalc totals from all linked sessions
+    const matches=linked.map(id=>rows.find(c=>(c.external_id||c.id)===id)).filter(Boolean);
+    if(matches.length){
+      const totalDur=matches.reduce((a,m)=>a+(m.duration_seconds||0),0);
+      const totalDist=matches.reduce((a,m)=>a+(m.distance_km||0),0);
+      const hrs=matches.filter(m=>m.avg_hr).map(m=>m.avg_hr);
+      if(totalDur) log.dur=Math.round(totalDur/60);
+      if(totalDist) log.dist=Math.round(totalDist*100)/100;
+      if(hrs.length) log.avgHr=Math.round(hrs.reduce((a,b)=>a+b,0)/hrs.length);
+      if(!log.date) log.date=matches[0].date_local;
+    }
+    if(!log.status&&linked.length) log.status='done';
+    save(); renderPlan(); setTimeout(()=>renderAnalysis(sessionId),200);
+  }
+  render();
 }
 
 const POLAR_AUTH_URL='https://flow.polar.com/oauth2/authorization';
@@ -830,7 +864,7 @@ function renderLog(s){
   else if(s.special==='comp'){ const c=L.comp||{}; extra=`<div class="sub"><h4>Benchmark score</h4><div class="grid">${fld('comp.rounds','Full rounds','number','e.g. 2',c.rounds)}${fld('comp.meters','+ extra metres','number','e.g. 1037',c.meters)}${fld('comp.runPace','Avg run pace','text','e.g. 5:10/km',c.runPace)}${fld('comp.sled','Sled weight','text','e.g. 152 kg',c.sled)}</div><div class="calc" id="compcalc"></div></div>`; }
   else if(s.special==='bench'){ const b=L.bench||{}; extra=`<div class="sub"><h4>Benchmark result</h4><div class="grid">${fld('bench.time','Time','text','e.g. 7:45',b.time)}${fld('bench.score','Score / reps / load','text','e.g. 112 reps',b.score)}</div></div>`; }
   if(s.tags.includes('threshold')||s.tags.includes('speed')){ const r=L.reps||{}; extra+=`<div class="sub"><h4>Run reps</h4><div class="grid">${fld('reps.dist','Rep distance (m)','number','e.g. 1000',r.dist)}</div><label class="f" style="margin-top:10px">Rep times (comma separated)<input data-k="reps.times" placeholder="4:05, 4:03, 4:01 …" value="${esc(r.times||'')}"></label><div class="calc" id="repcalc"></div><div class="small muted" style="margin-top:4px">Log your main running reps to build the pace trend in Progress.</div></div>`; }
-  return `<div class="log"><div class="row" style="justify-content:space-between"><h3>Log this session</h3><div class="row" style="gap:8px"><button class="btn sm" id="polarLinkBtn" onclick="showPolarPicker(${s.id})">Link Polar</button><span class="saved">Saved</span></div></div><div id="polarPicker"></div>${status}
+  return `<div class="log"><div class="row" style="justify-content:space-between"><h3>Log this session</h3><div class="row" style="gap:8px"><button class="btn sm" id="polarLinkBtn" onclick="showPolarPicker(${s.id})">${polarIds(L).length?'Polar ('+polarIds(L).length+')':'Link Polar'}</button><span class="saved">Saved</span></div></div><div id="polarPicker"></div>${status}
     <div class="grid">${fld('date','Date done','date','',L.date)}${fld('dur','Duration (min)','number','',L.dur)}${fld('dist','Distance (km)','number','',L.dist)}${fld('avgHr','Avg HR','number','bpm',L.avgHr)}
     <label class="f">RPE (1–10)<select data-k="rpe"><option value="">–</option>${[1,2,3,4,5,6,7,8,9,10].map(n=>`<option ${String(L.rpe)===String(n)?'selected':''}>${n}</option>`).join('')}</select></label></div>
     ${extra}<div class="sub"><label class="f">Notes<textarea data-k="notes" placeholder="Weights used, splits, tier you followed, how it felt…">${esc(L.notes||'')}</textarea></label></div></div><div id="analysisPanel"></div>`;
@@ -850,7 +884,7 @@ function bindLog(s){
   document.querySelectorAll('#detail [data-k]').forEach(inp=>{ const h=()=>{ setPath(logOf(s.id),inp.dataset.k,inp.value); save(); updateCalcs(s); renderHero(); renderWeeksLight(); }; inp.addEventListener('input',h); inp.addEventListener('change',h); });
   const um=document.getElementById('useMax'); if(um) um.onclick=()=>{ const v=+peek(s.id).maxHrResult; if(v>100&&v<230){ S.settings.maxHr=v; save(); um.textContent='Saved ✓'; } };
   updateCalcs(s);
-  if(peek(s.id)._polarId) renderAnalysis(s.id);
+  if(polarIds(peek(s.id)).length) renderAnalysis(s.id);
 }
 function renderWeeksLight(){ const p=P(); document.querySelectorAll('.wchip').forEach((b,i)=>{ const bar=b.querySelector('i'); if(bar&&p.weeks[i]) bar.style.width=Math.round(weekProgress(p.weeks[i])*100)+'%'; }); }
 function renderPlan(){ updateBrand(); if(curWeek>=P().weeks.length) curWeek=0; renderHero(); renderWeeks(); renderList(); renderDetail(); if(!curSess) document.getElementById('layout').classList.remove('showing'); }
@@ -1153,13 +1187,61 @@ function buildPlanFeedback(tags,splits,c,f){
   return fb;
 }
 
+async function fetchMergedCardio(ids){
+  // Fetch all linked sessions and merge into one virtual object
+  const all=await Promise.all(ids.map(id=>fetchCardioDetail(id)));
+  const valid=all.filter(Boolean);
+  if(!valid.length) return null;
+  if(valid.length===1) return valid[0];
+  // Merge: sum durations/distances, average HR, concat splits + micro
+  const merged={
+    duration_seconds:valid.reduce((a,c)=>a+(c.duration_seconds||0),0),
+    distance_km:Math.round(valid.reduce((a,c)=>a+(c.distance_km||0),0)*100)/100,
+    avg_hr:Math.round(valid.filter(c=>c.avg_hr).reduce((a,c)=>a+c.avg_hr,0)/(valid.filter(c=>c.avg_hr).length||1)),
+    max_hr:Math.max(...valid.map(c=>c.max_hr||0)),
+    hr_zone_seconds:null, hr_samples:null, details:null,
+  };
+  // Merge HR zone seconds
+  const allZs=valid.map(c=>{try{return typeof c.hr_zone_seconds==='string'?JSON.parse(c.hr_zone_seconds):c.hr_zone_seconds;}catch(e){return null;}}).filter(Boolean);
+  if(allZs.length){
+    const mz={}; allZs.forEach(zs=>{for(const k in zs) mz[k]=(mz[k]||0)+(zs[k]||0);});
+    merged.hr_zone_seconds=mz;
+  }
+  // Merge details (concat km_splits and micro)
+  const allDets=valid.map(c=>{try{return typeof c.details==='string'?JSON.parse(c.details):c.details;}catch(e){return null;}}).filter(Boolean);
+  if(allDets.length){
+    let kmOff=0, microOff=0;
+    const allSplits=[], allMicro=[];
+    allDets.forEach(d=>{
+      if(d.km_splits) d.km_splits.forEach(s=>{allSplits.push({...s,km:s.km+kmOff}); kmOff=s.km+kmOff;});
+      else kmOff+=(d.km_splits||[]).length;
+      if(d.micro) d.micro.forEach(s=>{allMicro.push({...s,m:s.m+microOff}); microOff=s.m+microOff;});
+      else microOff+=(d.micro||[]).length;
+    });
+    // Renumber sequentially
+    allSplits.forEach((s,i)=>s.km=i+1);
+    allMicro.forEach((s,i)=>s.m=i+1);
+    merged.details={
+      km_splits:allSplits.length?allSplits:undefined,
+      micro:allMicro.length?allMicro:undefined,
+      ele_gain:allDets.reduce((a,d)=>a+(d.ele_gain||0),0),
+      ele_loss:allDets.reduce((a,d)=>a+(d.ele_loss||0),0),
+    };
+  }
+  // Merge HR samples
+  const allHr=valid.map(c=>{try{return typeof c.hr_samples==='string'?JSON.parse(c.hr_samples):c.hr_samples;}catch(e){return null;}}).filter(a=>a&&a.length);
+  if(allHr.length) merged.hr_samples=JSON.stringify([].concat(...allHr));
+  return merged;
+}
+
 function renderAnalysis(sessionId){
   const el=document.getElementById('analysisPanel');
   if(!el) return;
   const L=peek(sessionId);
-  if(!L._polarId){ el.innerHTML=''; return; }
+  const ids=polarIds(L);
+  if(!ids.length){ el.innerHTML=''; return; }
   el.innerHTML='<div class="analysis"><div class="small muted">Loading Polar data...</div></div>';
-  fetchCardioDetail(L._polarId).then(c=>{
+  fetchMergedCardio(ids).then(c=>{
     if(!c){ el.innerHTML='<div class="analysis"><div class="small muted">Could not load Polar session data.</div></div>'; return; }
     const f=findSession(sessionId);
     const tags=f?f.s.tags:[];
