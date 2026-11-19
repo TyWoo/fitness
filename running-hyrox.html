@@ -443,20 +443,18 @@ async function polarFullSync(token){
     }catch(e){ console.warn('TCX error',s._exId,e); }
   }
 
-  // 3. Upsert to Supabase (batch, then retry individually on failure)
-  const clean=sessions.map(({_exId,...rest})=>rest);
+  // 3. Upsert to Supabase
+  // Normalize keys: every session must have the same fields for PostgREST batch insert
+  const allKeys=new Set(); sessions.forEach(s=>Object.keys(s).forEach(k=>allKeys.add(k)));
+  allKeys.delete('_exId');
+  const clean=sessions.map(s=>{const o={}; for(const k of allKeys) if(k!=='_exId') o[k]=s[k]!==undefined?s[k]:null; return o;});
   const uH=Object.assign({},sbH,{'Prefer':'return=minimal,resolution=merge-duplicates'});
-  const batchRes=await fetch(SB_URL+'/cardio_sessions',{method:'POST',headers:uH,body:JSON.stringify(clean)});
+  const upsertUrl=SB_URL+'/cardio_sessions?on_conflict=external_id';
+  const batchRes=await fetch(upsertUrl,{method:'POST',headers:uH,body:JSON.stringify(clean)});
   if(!batchRes.ok){
     const errBody=await batchRes.text();
-    console.warn('Batch upsert failed ('+batchRes.status+'):',errBody,'— retrying individually');
-    let ok=0,fail=0;
-    for(const s of clean){
-      const r=await fetch(SB_URL+'/cardio_sessions',{method:'POST',headers:uH,body:JSON.stringify([s])});
-      if(r.ok) ok++; else{ fail++; const e=await r.text(); console.warn('Failed:',s.external_id,s.date_local,r.status,e); }
-    }
-    console.log('Individual upsert:',ok,'ok,',fail,'failed');
-  }
+    console.warn('Batch upsert failed ('+batchRes.status+'):',errBody);
+  } else { console.log('Upsert ok:',clean.length,'sessions'); }
   return clean;
 }
 
